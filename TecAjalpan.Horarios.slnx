@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TecAjalpan.Horarios.Application/TecAjalpan.Horarios.Application.csproj" />
+    <Project Path="src/TecAjalpan.Horarios.Client/TecAjalpan.Horarios.Client.csproj" />
+    <Project Path="src/TecAjalpan.Horarios.Contracts/TecAjalpan.Horarios.Contracts.csproj" />
+    <Project Path="src/TecAjalpan.Horarios.Domain/TecAjalpan.Horarios.Domain.csproj" />
+    <Project Path="src/TecAjalpan.Horarios.Infrastructure/TecAjalpan.Horarios.Infrastructure.csproj" />
+    <Project Path="src/TecAjalpan.Horarios.Scheduling/TecAjalpan.Horarios.Scheduling.csproj" />
+    <Project Path="src/TecAjalpan.Horarios.Web/TecAjalpan.Horarios.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TecAjalpan.Horarios.ArchitectureTests/TecAjalpan.Horarios.ArchitectureTests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\TecAjalpan.Horarios.Application\TecAjalpan.Horarios.Application.csproj" />
+    <ProjectReference Include="..\TecAjalpan.Horarios.Domain\TecAjalpan.Horarios.Domain.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Google.OrTools" />
+  </ItemGroup>
+</Project>

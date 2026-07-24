@@ -1,0 +1,85 @@
+@page "/cambiar-contrasena"
+@attribute [Authorize]
+@layout LoginLayout
+@inject AuthApi AuthApi
+@inject NavigationManager Navigation
+
+<PageTitle>Cambiar contraseña | Horarios Tec Ajalpan</PageTitle>
+
+<div class="login-form-wrap password-page">
+  <EditForm Model="modelo" OnValidSubmit="Guardar" FormName="cambiar-contrasena">
+    <DataAnnotationsValidator />
+    <div class="login-card">
+      <div class="login-logo">TA</div>
+      <span class="eyebrow">Primer acceso</span>
+      <h2>Crea tu contraseña</h2>
+      <p>La contraseña temporal debe sustituirse antes de continuar.</p>
+
+      <label>Contraseña actual</label>
+      <InputText @bind-Value="modelo.Actual" type="password" autocomplete="current-password" />
+
+      <label>Nueva contraseña</label>
+      <InputText @bind-Value="modelo.Nueva" type="password" autocomplete="new-password" />
+
+      <label>Confirmar contraseña</label>
+      <InputText @bind-Value="modelo.Confirmacion" type="password" autocomplete="new-password" />
+
+      <ValidationSummary />
+      @if (!string.IsNullOrWhiteSpace(error))
+      {
+        <div class="alerta-error">@error</div>
+      }
+
+      <button class="btn-primary" type="submit" disabled="@procesando">
+        @(procesando ? "Guardando…" : "Guardar y continuar")
+      </button>
+    </div>
+  </EditForm>
+</div>
+
+@code {
+  private readonly CambioModel modelo = new();
+  private bool procesando;
+  private string? error;
+
+  private async Task Guardar()
+  {
+    error = null;
+    if (!string.Equals(modelo.Nueva, modelo.Confirmacion, StringComparison.Ordinal))
+    {
+      error = "La confirmación no coincide con la nueva contraseña.";
+      return;
+    }
+
+    procesando = true;
+    try
+    {
+      var resultado = await AuthApi.CambiarContrasenaAsync(
+        new CambiarContrasenaRequest(modelo.Actual, modelo.Nueva));
+      if (!resultado.Exitoso)
+      {
+        error = resultado.Mensaje;
+        return;
+      }
+
+      Navigation.NavigateTo("/");
+    }
+    finally
+    {
+      procesando = false;
+    }
+  }
+
+  private sealed class CambioModel
+  {
+    [System.ComponentModel.DataAnnotations.Required]
+    public string Actual { get; set; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.MinLength(10)]
+    public string Nueva { get; set; } = string.Empty;
+
+    [System.ComponentModel.DataAnnotations.Required]
+    public string Confirmacion { get; set; } = string.Empty;
+  }
+}

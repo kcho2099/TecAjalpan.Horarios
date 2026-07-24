@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\TecAjalpan.Horarios.Contracts\TecAjalpan.Horarios.Contracts.csproj" />
+    <ProjectReference Include="..\TecAjalpan.Horarios.Domain\TecAjalpan.Horarios.Domain.csproj" />
+  </ItemGroup>
+</Project>

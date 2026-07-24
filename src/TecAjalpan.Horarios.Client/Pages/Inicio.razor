@@ -1,0 +1,53 @@
+@page "/"
+@attribute [Authorize]
+
+<PageTitle>Panel | Horarios Tec Ajalpan</PageTitle>
+
+<div class="page-heading">
+  <div>
+    <span class="eyebrow">Resumen operativo</span>
+    <h1>Panel de planeación</h1>
+    <p>Estado general del periodo y accesos rápidos al flujo de horarios.</p>
+  </div>
+  <button class="btn-primary">Seleccionar periodo</button>
+</div>
+
+<div class="metric-grid">
+  <article class="metric-card">
+    <span>Configuración</span><strong>0%</strong>
+    <small>Selecciona un periodo para comenzar</small>
+  </article>
+  <article class="metric-card">
+    <span>Cargas autorizadas</span><strong>0</strong>
+    <small>Sin datos cargados</small>
+  </article>
+  <article class="metric-card">
+    <span>Versiones en revisión</span><strong>0</strong>
+    <small>No hay revisiones pendientes</small>
+  </article>
+  <article class="metric-card">
+    <span>Pendientes</span><strong>0</strong>
+    <small>Sin generación activa</small>
+  </article>
+</div>
+
+<div class="dashboard-grid">
+  <article class="panel">
+    <div class="panel-title"><h2>Ruta del periodo</h2><span>0 de 6</span></div>
+    <ol class="workflow">
+      <li><span>1</span><div><strong>Oferta académica</strong><small>Grupos y materias del periodo</small></div></li>
+      <li><span>2</span><div><strong>Disponibilidad docente</strong><small>Matriz semanal validada</small></div></li>
+      <li><span>3</span><div><strong>Carga docente</strong><small>Asignación y autorización</small></div></li>
+      <li><span>4</span><div><strong>Generación</strong><small>Propuesta automática sin empalmes</small></div></li>
+      <li><span>5</span><div><strong>Revisión</strong><small>Aprobación de Subdirección</small></div></li>
+      <li><span>6</span><div><strong>Publicación</strong><small>Versión oficial del periodo</small></div></li>
+    </ol>
+  </article>
+
+  <article class="panel empty-state">
+    <div class="empty-icon">▦</div>
+    <h2>Selecciona un periodo</h2>
+    <p>Al elegirlo verás el avance, las alertas y la versión oficial correspondiente.</p>
+    <button class="btn-secondary">Abrir periodos</button>
+  </article>
+</div>

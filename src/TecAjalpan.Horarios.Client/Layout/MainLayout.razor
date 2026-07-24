@@ -1,0 +1,66 @@
+@inherits LayoutComponentBase
+@inject AuthApi AuthApi
+@inject NavigationManager Navigation
+
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="marca">
+      <span class="marca-sello">TA</span>
+      <div>
+        <strong>Tec Ajalpan</strong>
+        <small>Sistema de Horarios</small>
+      </div>
+    </div>
+
+    <nav>
+      <NavLink href="/" Match="NavLinkMatch.All">Panel</NavLink>
+      <NavLink href="/periodos">Periodos</NavLink>
+      <NavLink href="/docentes">Docentes</NavLink>
+      <NavLink href="/disponibilidad">Disponibilidad</NavLink>
+      <NavLink href="/oferta">Oferta académica</NavLink>
+      <NavLink href="/generador">Generador</NavLink>
+      <NavLink href="/horario">Editor del horario</NavLink>
+      <NavLink href="/reportes">Reportes</NavLink>
+    </nav>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <div>
+        <span class="context-label">Periodo activo</span>
+        <strong>Sin seleccionar</strong>
+      </div>
+      <AuthorizeView>
+        <Authorized Context="auth">
+          <button class="usuario" @onclick="CerrarSesion">
+            <span>@Iniciales(auth.User.Identity?.Name)</span>
+            @auth.User.Identity?.Name
+          </button>
+        </Authorized>
+      </AuthorizeView>
+    </header>
+    <section class="contenido">
+      @Body
+    </section>
+  </main>
+</div>
+
+@code {
+  private async Task CerrarSesion()
+  {
+    await AuthApi.CerrarSesionAsync();
+    Navigation.NavigateTo("/login", forceLoad: false);
+  }
+
+  private static string Iniciales(string? nombre)
+  {
+    if (string.IsNullOrWhiteSpace(nombre))
+    {
+      return "U";
+    }
+
+    return string.Concat(nombre.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+      .Take(2)
+      .Select(x => char.ToUpperInvariant(x[0])));
+  }
+}

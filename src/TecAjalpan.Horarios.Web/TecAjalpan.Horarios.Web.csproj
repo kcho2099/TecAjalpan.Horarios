@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web"><PropertyGroup>  <UserSecretsId>1855d836-c426-428e-b013-980aacad4465</UserSecretsId>
+  </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\TecAjalpan.Horarios.Application\TecAjalpan.Horarios.Application.csproj" />
+        <ProjectReference Include="..\TecAjalpan.Horarios.Client\TecAjalpan.Horarios.Client.csproj" />
+        <ProjectReference Include="..\TecAjalpan.Horarios.Contracts\TecAjalpan.Horarios.Contracts.csproj" />
+        <ProjectReference Include="..\TecAjalpan.Horarios.Infrastructure\TecAjalpan.Horarios.Infrastructure.csproj" />
+        <ProjectReference Include="..\TecAjalpan.Horarios.Scheduling\TecAjalpan.Horarios.Scheduling.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+    </ItemGroup>
+</Project>

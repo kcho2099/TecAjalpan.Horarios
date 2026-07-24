@@ -1,0 +1,104 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@layout LoginLayout
+@inject AuthApi AuthApi
+@inject NavigationManager Navigation
+
+<PageTitle>Iniciar sesión | Horarios Tec Ajalpan</PageTitle>
+
+<div class="login-page">
+    <section class="login-brand">
+        <div class="login-copy">
+            <span class="eyebrow">Tecnológico de Ajalpan</span>
+            <h1>Horarios claros.<br />Decisiones seguras.</h1>
+            <p>Planeación académica, generación sin empalmes y publicación controlada en un solo lugar.</p>
+            <div class="login-feature">
+                <span>✓</span>
+                <div><strong>Flujo completo</strong><small>Configura, genera, revisa y publica.</small></div>
+            </div>
+            <div class="login-feature">
+                <span>✓</span>
+                <div><strong>Validación inmediata</strong><small>Detecta conflictos antes de guardar.</small></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="login-form-wrap">
+        <EditForm Model="modelo" OnValidSubmit="IniciarSesion" FormName="login">
+            <DataAnnotationsValidator />
+            <div class="login-card">
+                <div class="login-logo">TA</div>
+                <h2>Bienvenido</h2>
+                <p>Ingresa con tu correo institucional.</p>
+
+                <label>Correo electrónico</label>
+                <InputText @bind-Value="modelo.Correo" type="email" autocomplete="username"
+                           placeholder="usuario@ajalpan.tecnm.mx" />
+
+                <label>Contraseña</label>
+                <InputText @bind-Value="modelo.Contrasena" type="password"
+                           autocomplete="current-password" placeholder="••••••••••" />
+
+                @if (!string.IsNullOrWhiteSpace(error))
+                {
+                    <div class="alerta-error">@error</div>
+                }
+
+                <button class="btn-primary" type="submit" disabled="@procesando">
+                    @(procesando ? "Validando…" : "Iniciar sesión")
+                </button>
+                <a href="/recuperar">¿Olvidaste tu contraseña?</a>
+            </div>
+        </EditForm>
+    </section>
+</div>
+
+@code {
+    [SupplyParameterFromQuery]
+    public string? ReturnUrl { get; set; }
+
+    private readonly LoginModel modelo = new();
+    private bool procesando;
+    private string? error;
+
+    private async Task IniciarSesion()
+    {
+        procesando = true;
+        error = null;
+        try
+        {
+            var resultado = await AuthApi.LoginAsync(new LoginRequest(modelo.Correo, modelo.Contrasena));
+            if (!resultado.Exitoso)
+            {
+                error = resultado.Mensaje;
+                return;
+            }
+
+            if (AuthApi.SesionActual?.DebeCambiarContrasena == true)
+            {
+                Navigation.NavigateTo("/cambiar-contrasena");
+                return;
+            }
+
+            Navigation.NavigateTo(string.IsNullOrWhiteSpace(ReturnUrl) ? "/" : ReturnUrl);
+        }
+        catch(Exception ex)
+        {
+            error = $"{ex.GetType().Name}: {ex.Message}";
+            //error = "No fue posible comunicarse con el servidor.";
+        }
+        finally
+        {
+            procesando = false;
+        }
+    }
+
+    private sealed class LoginModel
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "El correo es obligatorio.")]
+        public string Correo { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "La contraseña es obligatoria.")]
+        public string Contrasena { get; set; } = string.Empty;
+    }
+}

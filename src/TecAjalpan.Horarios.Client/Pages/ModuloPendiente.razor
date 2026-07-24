@@ -1,0 +1,59 @@
+@page "/periodos"
+@page "/docentes"
+@page "/disponibilidad"
+@page "/oferta"
+@page "/generador"
+@page "/horario"
+@page "/reportes"
+@attribute [Authorize]
+
+@* <PageTitle>Módulo en construcción | Horarios Tec Ajalpan</PageTitle>
+<div class="page-heading">
+  <div>
+    <span class="eyebrow">Base funcional</span>
+    <h1>@Titulo</h1>
+    <p>La navegación y seguridad ya están preparadas. Este módulo corresponde al siguiente ciclo de construcción.</p>
+  </div>
+</div>
+<article class="panel empty-state">
+  <div class="empty-icon">⌁</div>
+  <h2>@Titulo</h2>
+  <p>Selecciona primero un periodo para trabajar con los datos académicos correspondientes.</p>
+</article>
+
+@code {
+  private string Titulo => new Uri(NavigationManager.Uri).AbsolutePath switch
+  {
+    "/periodos" => "Periodos",
+    "/docentes" => "Docentes",
+    "/disponibilidad" => "Disponibilidad docente",
+    "/oferta" => "Oferta académica",
+    "/generador" => "Generador de horarios",
+    "/horario" => "Editor del horario",
+    "/reportes" => "Reportes",
+    _ => "Módulo"
+  };
+
+  [Inject]
+  private NavigationManager NavigationManager { get; set; } = null!;
+} *@
+
+
+<PageTitle>@Titulo | Horarios Tec Ajalpan</PageTitle>
+<div class="page-heading">
+    <div>
+        <span class="eyebrow">Base funcional</span>
+        <h1>@Titulo</h1>
+        <p>La navegación y seguridad ya están preparadas. Este módulo corresponde al siguiente ciclo de construcción.</p>
+    </div>
+</div>
+<article class="panel empty-state">
+    <div class="empty-icon">⌁</div>
+    <h2>@Titulo</h2>
+    <p>Selecciona primero un periodo para trabajar con los datos académicos correspondientes.</p>
+</article>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Titulo { get; set; } = string.Empty;
+}
