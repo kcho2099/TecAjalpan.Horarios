@@ -898,3 +898,49 @@ main {
     grid-template-columns: 1fr;
   }
 }
+.audit-date {
+  white-space: nowrap;
+}
+
+.audit-record-id {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.audit-comparison h3 {
+  margin: 0 0 .5rem;
+}
+
+.audit-comparison pre {
+  min-height: 10rem;
+  max-height: 24rem;
+  margin: 0;
+  padding: 1rem;
+  overflow: auto;
+  border: 1px solid var(--borde);
+  border-radius: .75rem;
+  background: #f8f8f8;
+  font-size: .78rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.audit-correlation {
+  margin: 1rem 0 0;
+  color: var(--gris);
+  font-size: .82rem;
+}
+
+@media (max-width: 760px) {
+  .audit-comparison {
+    grid-template-columns: 1fr;
+  }
+}

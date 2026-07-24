@@ -1,0 +1,186 @@
+@page "/bitacora"
+@attribute [Authorize(Roles = "Administrador")]
+@inject BitacoraApi Api
+
+<PageTitle>Bitácora | Horarios Tec Ajalpan</PageTitle>
+
+<div class="page-heading">
+  <div>
+    <span class="eyebrow">Trazabilidad del sistema</span>
+    <h1>Bitácora</h1>
+    <p>Consulta las altas, cambios, bajas y asignaciones realizadas en el sistema.</p>
+  </div>
+  <button class="btn-secondary" type="button" @onclick="Cargar">Actualizar</button>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+  <div class="alerta-error">@error</div>
+}
+
+<article class="panel">
+  <div class="toolbar">
+    <label class="search-box">
+      <span>Buscar</span>
+      <input @bind="filtro" @bind:event="oninput"
+             placeholder="Usuario, acción, entidad o identificador…" />
+    </label>
+    <span class="record-count">@RegistrosFiltrados.Count() evento(s)</span>
+  </div>
+
+  @if (cargando)
+  {
+    <div class="table-state">Cargando bitácora…</div>
+  }
+  else if (!RegistrosFiltrados.Any())
+  {
+    <div class="empty-state compact">
+      <div class="empty-icon">◎</div>
+      <h2>No hay eventos para mostrar</h2>
+      <p>Los cambios realizados en Periodos, Carreras y Usuarios aparecerán aquí.</p>
+    </div>
+  }
+  else
+  {
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Usuario</th>
+            <th>Acción</th>
+            <th>Entidad</th>
+            <th>Registro</th>
+            <th class="actions-column">Detalle</th>
+          </tr>
+        </thead>
+        <tbody>
+          @foreach (var registro in RegistrosFiltrados)
+          {
+            <tr>
+              <td class="audit-date">@registro.Fecha.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
+              <td>@registro.Usuario</td>
+              <td><span class="status status-draft">@SepararAccion(registro.Accion)</span></td>
+              <td>@registro.Entidad</td>
+              <td class="audit-record-id" title="@registro.RegistroId">@registro.RegistroId</td>
+              <td class="actions-column">
+                @if (registro.ValoresAnteriores is not null
+                  || registro.ValoresNuevos is not null)
+                {
+                  <button class="btn-link" @onclick="() => VerDetalle(registro)">Ver cambios</button>
+                }
+                else
+                {
+                  <span class="muted">—</span>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</article>
+
+@if (registroDetalle is not null)
+{
+  <div class="modal-backdrop" @onclick="CerrarDetalle">
+    <section class="modal-card modal-wide" role="dialog" aria-modal="true"
+             aria-labelledby="titulo-bitacora" @onclick:stopPropagation>
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">@registroDetalle.Entidad · @SepararAccion(registroDetalle.Accion)</span>
+          <h2 id="titulo-bitacora">Cambios del registro</h2>
+          <p>@registroDetalle.RegistroId</p>
+        </div>
+        <button class="icon-button" type="button" title="Cerrar"
+                @onclick="CerrarDetalle">×</button>
+      </div>
+
+      <div class="audit-comparison">
+        <section>
+          <h3>Valores anteriores</h3>
+          <pre>@FormatearJson(registroDetalle.ValoresAnteriores)</pre>
+        </section>
+        <section>
+          <h3>Valores nuevos</h3>
+          <pre>@FormatearJson(registroDetalle.ValoresNuevos)</pre>
+        </section>
+      </div>
+      @if (!string.IsNullOrWhiteSpace(registroDetalle.CorrelationId))
+      {
+        <p class="audit-correlation">
+          Correlación: <code>@registroDetalle.CorrelationId</code>
+        </p>
+      }
+      <div class="modal-actions">
+        <button class="btn-primary" type="button" @onclick="CerrarDetalle">Cerrar</button>
+      </div>
+    </section>
+  </div>
+}
+
+@code {
+  private static readonly JsonSerializerOptions JsonIndentado = new()
+  {
+    WriteIndented = true
+  };
+
+  private List<BitacoraDto> registros = [];
+  private BitacoraDto? registroDetalle;
+  private string filtro = string.Empty;
+  private string? error;
+  private bool cargando = true;
+
+  private IEnumerable<BitacoraDto> RegistrosFiltrados =>
+    registros.Where(x => string.IsNullOrWhiteSpace(filtro)
+      || x.Usuario.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+      || x.Accion.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+      || x.Entidad.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+      || x.RegistroId.Contains(filtro, StringComparison.OrdinalIgnoreCase));
+
+  protected override Task OnInitializedAsync() => Cargar();
+
+  private async Task Cargar()
+  {
+    cargando = true;
+    error = null;
+    try
+    {
+      registros = (await Api.ListarAsync()).ToList();
+    }
+    catch (Exception ex)
+    {
+      error = $"No fue posible cargar la bitácora: {ex.Message}";
+    }
+    finally
+    {
+      cargando = false;
+    }
+  }
+
+  private void VerDetalle(BitacoraDto registro) => registroDetalle = registro;
+  private void CerrarDetalle() => registroDetalle = null;
+
+  private static string FormatearJson(string? valor)
+  {
+    if (string.IsNullOrWhiteSpace(valor))
+    {
+      return "Sin valores";
+    }
+
+    try
+    {
+      using var documento = JsonDocument.Parse(valor);
+      return JsonSerializer.Serialize(documento.RootElement, JsonIndentado);
+    }
+    catch (JsonException)
+    {
+      return valor;
+    }
+  }
+
+  private static string SepararAccion(string accion) =>
+    string.Concat(accion.Select((caracter, indice) =>
+      indice > 0 && char.IsUpper(caracter) ? $" {caracter}" : caracter.ToString()));
+}
