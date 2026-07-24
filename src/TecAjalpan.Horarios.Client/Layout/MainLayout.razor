@@ -14,6 +14,11 @@
 
     <nav>
       <NavLink href="/" Match="NavLinkMatch.All">Panel</NavLink>
+      <AuthorizeView Roles="Administrador">
+        <Authorized>
+          <NavLink href="/usuarios">Usuarios</NavLink>
+        </Authorized>
+      </AuthorizeView>
       <AuthorizeView Roles="Administrador,Secretaría">
         <Authorized>
           <NavLink href="/periodos">Periodos</NavLink>

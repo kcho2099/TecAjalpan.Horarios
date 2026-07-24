@@ -796,3 +796,90 @@ main {
     grid-template-columns: 1fr;
   }
 }
+
+.temporary-password {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem 1.2rem;
+  border: 1px solid #d9b65e;
+  border-radius: 14px;
+  background: #fff8df;
+  color: #5b4310;
+}
+
+.temporary-password div {
+  flex: 1;
+}
+
+.temporary-password p {
+  margin: .2rem 0 0;
+}
+
+.temporary-password code {
+  padding: .55rem .75rem;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  user-select: all;
+}
+
+.row-inactive {
+  opacity: .68;
+}
+
+.user-actions {
+  min-width: 220px;
+}
+
+.user-actions .btn-link {
+  margin-right: .55rem;
+}
+
+.danger-link {
+  color: #a52828 !important;
+}
+
+.muted {
+  color: #777;
+}
+
+.modal-wide {
+  width: min(760px, calc(100vw - 2rem));
+}
+
+.confirm-card {
+  width: min(480px, calc(100vw - 2rem));
+}
+
+.career-selector {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.career-selector legend {
+  margin-bottom: .55rem;
+  font-weight: 700;
+}
+
+.career-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .65rem;
+  margin-bottom: .55rem;
+}
+
+@media (max-width: 700px) {
+  .temporary-password {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .career-grid {
+    grid-template-columns: 1fr;
+  }
+}
