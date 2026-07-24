@@ -37,6 +37,8 @@ builder.Services.AddProblemDetails();
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy(Politicas.AdministrarUsuarios,
         policy => policy.RequireRole(Roles.Administrador))
+    .AddPolicy(Politicas.AdministrarPeriodos,
+        policy => policy.RequireRole(Roles.Administrador, Roles.Secretaria))
     .AddPolicy(Politicas.GenerarHorario,
         policy => policy.RequireRole(Roles.Administrador, Roles.Jefatura))
     .AddPolicy(Politicas.AprobarHorario,

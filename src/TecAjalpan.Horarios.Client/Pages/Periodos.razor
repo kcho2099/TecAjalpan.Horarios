@@ -1,0 +1,291 @@
+@page "/periodos"
+@attribute [Authorize(Roles = "Administrador,Secretaría")]
+@inject PeriodosApi Api
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Periodos | Horarios Tec Ajalpan</PageTitle>
+
+<div class="page-heading">
+  <div>
+    <span class="eyebrow">Configuración académica</span>
+    <h1>Periodos</h1>
+    <p>Define las fechas, semanas y semestres que participarán en la planeación.</p>
+  </div>
+  <button class="btn-primary" @onclick="NuevoPeriodo">+ Nuevo periodo</button>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(mensaje))
+{
+  <div class="alerta-exito">@mensaje</div>
+}
+@if (!string.IsNullOrWhiteSpace(error))
+{
+  <div class="alerta-error">@error</div>
+}
+
+<article class="panel periodos-panel">
+  <div class="toolbar">
+    <label class="search-box">
+      <span>Buscar</span>
+      <input @bind="filtro" @bind:event="oninput" placeholder="Nombre o estado…" />
+    </label>
+    <span class="record-count">@PeriodosFiltrados.Count() periodo(s)</span>
+  </div>
+
+  @if (cargando)
+  {
+    <div class="table-state">Cargando periodos…</div>
+  }
+  else if (!PeriodosFiltrados.Any())
+  {
+    <div class="empty-state compact">
+      <div class="empty-icon">▦</div>
+      <h2>No hay periodos registrados</h2>
+      <p>Crea el primer periodo para comenzar a configurar la oferta académica.</p>
+      <button class="btn-secondary" @onclick="NuevoPeriodo">Crear periodo</button>
+    </div>
+  }
+  else
+  {
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Periodo</th>
+            <th>Fechas</th>
+            <th>Semanas</th>
+            <th>Semestres</th>
+            <th>Estado</th>
+            <th class="actions-column">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          @foreach (var periodo in PeriodosFiltrados)
+          {
+            <tr>
+              <td>
+                <strong>@periodo.Nombre</strong>
+                @if (periodo.PermitirExcepcionSemestre)
+                {
+                  <small>Permite excepciones de semestre</small>
+                }
+              </td>
+              <td>
+                <span>@periodo.FechaInicio.ToString("dd MMM yyyy")</span>
+                <small>al @periodo.FechaFin.ToString("dd MMM yyyy")</small>
+              </td>
+              <td>@periodo.Semanas</td>
+              <td>@(periodo.SemestresPares ? "Pares" : "Impares")</td>
+              <td><span class="status @ClaseEstado(periodo.Estado)">@periodo.EstadoTexto</span></td>
+              <td class="actions-column">
+                <button class="btn-link" @onclick="() => Editar(periodo)">Editar</button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</article>
+
+@if (mostrarFormulario)
+{
+  <div class="modal-backdrop" @onclick="CerrarFormulario">
+    <section class="modal-card" role="dialog" aria-modal="true"
+             aria-labelledby="titulo-formulario" @onclick:stopPropagation>
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">@(periodoId.HasValue ? "Editar registro" : "Nuevo registro")</span>
+          <h2 id="titulo-formulario">@(periodoId.HasValue ? "Editar periodo" : "Crear periodo")</h2>
+        </div>
+        <button class="icon-button" type="button" title="Cerrar" @onclick="CerrarFormulario">×</button>
+      </div>
+
+      <EditForm Model="modelo" OnValidSubmit="Guardar">
+        <DataAnnotationsValidator />
+        <div class="form-grid">
+          <div class="form-field full">
+            <label for="nombre">Nombre del periodo</label>
+            <InputText id="nombre" @bind-Value="modelo.Nombre"
+                       placeholder="Ej. Agosto - Diciembre 2026" />
+            <ValidationMessage For="() => modelo.Nombre" />
+          </div>
+          <div class="form-field">
+            <label for="inicio">Fecha de inicio</label>
+            <InputDate id="inicio" @bind-Value="modelo.FechaInicio" />
+          </div>
+          <div class="form-field">
+            <label for="fin">Fecha de fin</label>
+            <InputDate id="fin" @bind-Value="modelo.FechaFin" />
+            <ValidationMessage For="() => modelo.FechaFin" />
+          </div>
+          <div class="form-field">
+            <label for="semanas">Semanas</label>
+            <InputNumber id="semanas" @bind-Value="modelo.Semanas"
+                         disabled="@(!esAdministrador)" />
+            @if (!esAdministrador)
+            {
+              <small>Los periodos ordinarios tienen 16 semanas. Sólo el administrador puede cambiar esta duración.</small>
+            }
+            <ValidationMessage For="() => modelo.Semanas" />
+          </div>
+          <div class="form-field">
+            <label for="estado">Estado</label>
+            <InputSelect id="estado" @bind-Value="modelo.Estado"
+                         disabled="@(!esAdministrador && periodoCerrado)">
+              <option value="1">Configuración</option>
+              <option value="2">Activo</option>
+              <option value="3">Cerrado</option>
+            </InputSelect>
+            @if (!esAdministrador && periodoCerrado)
+            {
+              <small>Este periodo está cerrado. Sólo el administrador puede reactivarlo.</small>
+            }
+          </div>
+          <label class="check-field full">
+            <InputCheckbox @bind-Value="modelo.SemestresPares" />
+            <span><strong>Semestres pares</strong><small>Desactívalo para semestres impares.</small></span>
+          </label>
+          <label class="check-field full">
+            <InputCheckbox @bind-Value="modelo.PermitirExcepcionSemestre" />
+            <span><strong>Permitir excepciones</strong><small>Autoriza grupos fuera de la paridad elegida.</small></span>
+          </label>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(errorFormulario))
+        {
+          <div class="alerta-error">@errorFormulario</div>
+        }
+        <div class="modal-actions">
+          <button class="btn-ghost" type="button" @onclick="CerrarFormulario">Cancelar</button>
+          <button class="btn-primary" type="submit" disabled="@guardando">
+            @(guardando ? "Guardando…" : "Guardar periodo")
+          </button>
+        </div>
+      </EditForm>
+    </section>
+  </div>
+}
+
+@code {
+  private List<PeriodoDto> periodos = [];
+  private GuardarPeriodoRequest modelo = NuevoModelo();
+  private Guid? periodoId;
+  private string filtro = string.Empty;
+  private string? mensaje;
+  private string? error;
+  private string? errorFormulario;
+  private bool cargando = true;
+  private bool guardando;
+  private bool mostrarFormulario;
+  private bool esAdministrador;
+  private bool periodoCerrado;
+
+  private IEnumerable<PeriodoDto> PeriodosFiltrados =>
+    periodos.Where(x => string.IsNullOrWhiteSpace(filtro)
+      || x.Nombre.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+      || x.EstadoTexto.Contains(filtro, StringComparison.OrdinalIgnoreCase));
+
+  protected override async Task OnInitializedAsync()
+  {
+    try
+    {
+      var estadoAutenticacion =
+        await AuthenticationStateProvider.GetAuthenticationStateAsync();
+      esAdministrador =
+        estadoAutenticacion.User.IsInRole("Administrador");
+      periodos = (await Api.ListarAsync()).ToList();
+    }
+    catch (Exception ex)
+    {
+      error = $"No fue posible cargar los periodos: {ex.Message}";
+    }
+    finally
+    {
+      cargando = false;
+    }
+  }
+
+  private void NuevoPeriodo()
+  {
+    periodoId = null;
+    modelo = NuevoModelo();
+    periodoCerrado = false;
+    errorFormulario = null;
+    mostrarFormulario = true;
+  }
+
+  private void Editar(PeriodoDto periodo)
+  {
+    periodoId = periodo.Id;
+    modelo = new GuardarPeriodoRequest
+    {
+      Nombre = periodo.Nombre,
+      FechaInicio = periodo.FechaInicio,
+      FechaFin = periodo.FechaFin,
+      Semanas = periodo.Semanas,
+      SemestresPares = periodo.SemestresPares,
+      PermitirExcepcionSemestre = periodo.PermitirExcepcionSemestre,
+      Estado = periodo.Estado,
+      RowVersion = periodo.RowVersion
+    };
+    periodoCerrado = periodo.Estado == 3;
+    errorFormulario = null;
+    mostrarFormulario = true;
+  }
+
+  private async Task Guardar()
+  {
+    guardando = true;
+    errorFormulario = null;
+    try
+    {
+      var resultado = await Api.GuardarAsync(periodoId, modelo);
+      if (!resultado.Correcto || resultado.Periodo is null)
+      {
+        errorFormulario = resultado.Mensaje;
+        return;
+      }
+
+      var indice = periodos.FindIndex(x => x.Id == resultado.Periodo.Id);
+      if (indice >= 0)
+      {
+        periodos[indice] = resultado.Periodo;
+      }
+      else
+      {
+        periodos.Insert(0, resultado.Periodo);
+      }
+      mensaje = periodoId.HasValue ? "Periodo actualizado correctamente." : "Periodo creado correctamente.";
+      mostrarFormulario = false;
+    }
+    catch (Exception ex)
+    {
+      errorFormulario = $"No fue posible guardar: {ex.Message}";
+    }
+    finally
+    {
+      guardando = false;
+    }
+  }
+
+  private void CerrarFormulario() => mostrarFormulario = false;
+  private static string ClaseEstado(byte estado) => estado switch
+  {
+    2 => "status-active",
+    3 => "status-closed",
+    _ => "status-draft"
+  };
+
+  private static GuardarPeriodoRequest NuevoModelo()
+  {
+    var hoy = DateOnly.FromDateTime(DateTime.Today);
+    return new GuardarPeriodoRequest
+    {
+      FechaInicio = hoy,
+      FechaFin = hoy.AddMonths(5),
+      Semanas = 16,
+      Estado = 1
+    };
+  }
+}
