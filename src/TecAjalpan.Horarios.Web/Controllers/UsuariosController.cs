@@ -53,6 +53,7 @@ public sealed class UsuariosController(
     }
 
     [HttpPost]
+    [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<ResultadoUsuarioDto>> Crear(
         GuardarUsuarioRequest request,
         CancellationToken cancellationToken)
@@ -90,12 +91,6 @@ public sealed class UsuariosController(
             return BadRequest(new { mensaje = MensajeErrores(asignacionRol) });
         }
 
-        dbContext.UsuariosCarreras.AddRange(request.Carreras.Distinct()
-            .Select(carreraId => new UsuarioCarrera
-            {
-                UsuarioId = usuario.Id,
-                CarreraId = carreraId
-            }));
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaccion.CommitAsync(cancellationToken);
 
@@ -108,6 +103,7 @@ public sealed class UsuariosController(
     }
 
     [HttpPut("{id}")]
+    [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<ResultadoUsuarioDto>> Actualizar(
         string id,
         GuardarUsuarioRequest request,
@@ -145,6 +141,17 @@ public sealed class UsuariosController(
             });
         }
 
+        if (request.Rol == Roles.Jefatura
+            && await dbContext.UsuariosCarreras.CountAsync(
+                x => x.UsuarioId == usuario.Id,
+                cancellationToken) > 1)
+        {
+            return BadRequest(new
+            {
+                mensaje = "Antes de asignar el rol Jefatura, deja al usuario con una sola carrera."
+            });
+        }
+
         await using var transaccion =
             await dbContext.Database.BeginTransactionAsync(cancellationToken);
 
@@ -177,16 +184,13 @@ public sealed class UsuariosController(
             return BadRequest(new { mensaje = MensajeErrores(agregarRol) });
         }
 
-        var carrerasActuales = await dbContext.UsuariosCarreras
-            .Where(x => x.UsuarioId == usuario.Id)
-            .ToListAsync(cancellationToken);
-        dbContext.UsuariosCarreras.RemoveRange(carrerasActuales);
-        dbContext.UsuariosCarreras.AddRange(request.Carreras.Distinct()
-            .Select(carreraId => new UsuarioCarrera
-            {
-                UsuarioId = usuario.Id,
-                CarreraId = carreraId
-            }));
+        if (request.Rol is Roles.Administrador or Roles.Subdireccion)
+        {
+            var carrerasActuales = await dbContext.UsuariosCarreras
+                .Where(x => x.UsuarioId == usuario.Id)
+                .ToListAsync(cancellationToken);
+            dbContext.UsuariosCarreras.RemoveRange(carrerasActuales);
+        }
 
         await dbContext.SaveChangesAsync(cancellationToken);
         await userManager.UpdateSecurityStampAsync(usuario);
@@ -199,6 +203,7 @@ public sealed class UsuariosController(
     }
 
     [HttpPatch("{id}/estado")]
+    [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<ResultadoUsuarioDto>> CambiarEstado(
         string id,
         CambiarEstadoUsuarioRequest request,
@@ -241,6 +246,7 @@ public sealed class UsuariosController(
     }
 
     [HttpPost("{id}/restablecer-contrasena")]
+    [Authorize(Roles = Roles.Administrador)]
     public async Task<ActionResult<ResultadoUsuarioDto>> RestablecerContrasena(
         string id,
         CancellationToken cancellationToken)
@@ -271,6 +277,70 @@ public sealed class UsuariosController(
             "Contraseña restablecida correctamente."));
     }
 
+    [HttpPatch("{id}/carreras")]
+    public async Task<ActionResult<ResultadoUsuarioDto>> AsignarCarreras(
+        string id,
+        AsignarCarrerasUsuarioRequest request,
+        CancellationToken cancellationToken)
+    {
+        var usuario = await ObtenerSinFiltroAsync(id, cancellationToken);
+        if (usuario is null)
+        {
+            return NotFound();
+        }
+
+        var roles = await userManager.GetRolesAsync(usuario);
+        var rol = roles.FirstOrDefault();
+        if (rol is Roles.Administrador or Roles.Subdireccion)
+        {
+            return BadRequest(new
+            {
+                mensaje = "Administrador y Subdirección tienen alcance institucional y no llevan carreras asignadas."
+            });
+        }
+
+        var carrerasSolicitadas = request.Carreras.Distinct().ToArray();
+        if (rol == Roles.Jefatura && carrerasSolicitadas.Length > 1)
+        {
+            return BadRequest(new
+            {
+                mensaje = "Jefatura sólo puede tener una carrera asignada."
+            });
+        }
+
+        var carrerasExistentes = await dbContext.Carreras.CountAsync(
+            x => carrerasSolicitadas.Contains(x.Id) && x.Activo,
+            cancellationToken);
+        if (carrerasExistentes != carrerasSolicitadas.Length)
+        {
+            return BadRequest(new
+            {
+                mensaje = "Una o más carreras seleccionadas no existen o están inactivas."
+            });
+        }
+
+        var carrerasActuales = await dbContext.UsuariosCarreras
+            .Where(x => x.UsuarioId == usuario.Id)
+            .ToListAsync(cancellationToken);
+        dbContext.UsuariosCarreras.RemoveRange(carrerasActuales);
+        dbContext.UsuariosCarreras.AddRange(carrerasSolicitadas
+            .Select(carreraId => new UsuarioCarrera
+            {
+                UsuarioId = usuario.Id,
+                CarreraId = carreraId
+            }));
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await userManager.UpdateSecurityStampAsync(usuario);
+
+        return Ok(new ResultadoUsuarioDto(
+            await MapearAsync(usuario, cancellationToken),
+            null,
+            carrerasSolicitadas.Length == 0
+                ? "Se retiraron las carreras asignadas."
+                : "Carreras asignadas correctamente."));
+    }
+
     private async Task<string?> ValidarRequestAsync(
         GuardarUsuarioRequest request,
         string? usuarioId,
@@ -289,13 +359,7 @@ public sealed class UsuariosController(
             return "Ya existe un usuario con ese correo.";
         }
 
-        var carrerasSolicitadas = request.Carreras.Distinct().ToArray();
-        var carrerasExistentes = await dbContext.Carreras.CountAsync(
-            x => carrerasSolicitadas.Contains(x.Id) && x.Activo,
-            cancellationToken);
-        return carrerasExistentes == carrerasSolicitadas.Length
-            ? null
-            : "Una o más carreras seleccionadas no existen o están inactivas.";
+        return null;
     }
 
     private async Task<UsuarioDto> MapearAsync(

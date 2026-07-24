@@ -36,7 +36,7 @@ builder.Services.AddAntiforgery(options =>
 builder.Services.AddProblemDetails();
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy(Politicas.AdministrarUsuarios,
-        policy => policy.RequireRole(Roles.Administrador))
+        policy => policy.RequireRole(Roles.Administrador, Roles.Subdireccion))
     .AddPolicy(Politicas.AdministrarPeriodos,
         policy => policy.RequireRole(Roles.Administrador, Roles.Secretaria))
     .AddPolicy(Politicas.GenerarHorario,
