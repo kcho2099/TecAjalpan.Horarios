@@ -21,6 +21,7 @@ public static class Roles
 public static class Politicas
 {
     public const string AdministrarUsuarios = nameof(AdministrarUsuarios);
+    public const string AdministrarPeriodos = nameof(AdministrarPeriodos);
     public const string AdministrarCarrera = nameof(AdministrarCarrera);
     public const string GenerarHorario = nameof(GenerarHorario);
     public const string AprobarHorario = nameof(AprobarHorario);

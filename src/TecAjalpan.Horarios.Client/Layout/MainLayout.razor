@@ -14,7 +14,11 @@
 
     <nav>
       <NavLink href="/" Match="NavLinkMatch.All">Panel</NavLink>
-      <NavLink href="/periodos">Periodos</NavLink>
+      <AuthorizeView Roles="Administrador,Secretaría">
+        <Authorized>
+          <NavLink href="/periodos">Periodos</NavLink>
+        </Authorized>
+      </AuthorizeView>
       <NavLink href="/docentes">Docentes</NavLink>
       <NavLink href="/disponibilidad">Disponibilidad</NavLink>
       <NavLink href="/oferta">Oferta académica</NavLink>

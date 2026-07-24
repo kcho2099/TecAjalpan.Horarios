@@ -1,6 +1,8 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TecAjalpan.Horarios.Application.Abstractions;
+using TecAjalpan.Horarios.Application.Security;
 using TecAjalpan.Horarios.Contracts.Periodos;
 using TecAjalpan.Horarios.Domain.Entities;
 using TecAjalpan.Horarios.Domain.Enums;
@@ -9,6 +11,7 @@ namespace TecAjalpan.Horarios.Web.Controllers;
 
 [ApiController]
 [Route("api/periodos")]
+[Authorize(Policy = Politicas.AdministrarPeriodos)]
 public sealed class PeriodosController(IPeriodoRepository repository) : ControllerBase
 {
     [HttpGet]
@@ -33,6 +36,14 @@ public sealed class PeriodosController(IPeriodoRepository repository) : Controll
         GuardarPeriodoRequest request,
         CancellationToken cancellationToken)
     {
+        if (!EsAdministrador() && request.Semanas != 16)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new
+            {
+                mensaje = "Los periodos ordinarios deben tener 16 semanas. Sólo un administrador puede autorizar otra duración."
+            });
+        }
+
         var periodo = new Periodo();
         Aplicar(request, periodo);
         await repository.AgregarAsync(periodo, cancellationToken);
@@ -66,6 +77,26 @@ public sealed class PeriodosController(IPeriodoRepository repository) : Controll
             return Conflict(new
             {
                 mensaje = "El periodo fue modificado por otra persona. Recarga los datos e inténtalo nuevamente."
+            });
+        }
+
+        if (!EsAdministrador()
+            && request.Semanas != 16
+            && request.Semanas != periodo.Semanas)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new
+            {
+                mensaje = "Sólo un administrador puede cambiar la duración del periodo a un valor distinto de 16 semanas."
+            });
+        }
+
+        if (!EsAdministrador()
+            && periodo.Estado == EstadoPeriodo.Cerrado
+            && request.Estado != (byte)EstadoPeriodo.Cerrado)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new
+            {
+                mensaje = "El periodo está cerrado. Sólo un administrador puede volverlo a Configuración o Activo."
             });
         }
 
@@ -136,4 +167,6 @@ public sealed class PeriodosController(IPeriodoRepository repository) : Controll
             return false;
         }
     }
+
+    private bool EsAdministrador() => User.IsInRole(Roles.Administrador);
 }

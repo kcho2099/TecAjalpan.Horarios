@@ -1,6 +1,7 @@
 @page "/periodos"
-@attribute [Authorize]
+@attribute [Authorize(Roles = "Administrador,Secretaría")]
 @inject PeriodosApi Api
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Periodos | Horarios Tec Ajalpan</PageTitle>
 
@@ -120,16 +121,26 @@
           </div>
           <div class="form-field">
             <label for="semanas">Semanas</label>
-            <InputNumber id="semanas" @bind-Value="modelo.Semanas" />
+            <InputNumber id="semanas" @bind-Value="modelo.Semanas"
+                         disabled="@(!esAdministrador)" />
+            @if (!esAdministrador)
+            {
+              <small>Los periodos ordinarios tienen 16 semanas. Sólo el administrador puede cambiar esta duración.</small>
+            }
             <ValidationMessage For="() => modelo.Semanas" />
           </div>
           <div class="form-field">
             <label for="estado">Estado</label>
-            <InputSelect id="estado" @bind-Value="modelo.Estado">
+            <InputSelect id="estado" @bind-Value="modelo.Estado"
+                         disabled="@(!esAdministrador && periodoCerrado)">
               <option value="1">Configuración</option>
               <option value="2">Activo</option>
               <option value="3">Cerrado</option>
             </InputSelect>
+            @if (!esAdministrador && periodoCerrado)
+            {
+              <small>Este periodo está cerrado. Sólo el administrador puede reactivarlo.</small>
+            }
           </div>
           <label class="check-field full">
             <InputCheckbox @bind-Value="modelo.SemestresPares" />
@@ -167,6 +178,8 @@
   private bool cargando = true;
   private bool guardando;
   private bool mostrarFormulario;
+  private bool esAdministrador;
+  private bool periodoCerrado;
 
   private IEnumerable<PeriodoDto> PeriodosFiltrados =>
     periodos.Where(x => string.IsNullOrWhiteSpace(filtro)
@@ -177,6 +190,10 @@
   {
     try
     {
+      var estadoAutenticacion =
+        await AuthenticationStateProvider.GetAuthenticationStateAsync();
+      esAdministrador =
+        estadoAutenticacion.User.IsInRole("Administrador");
       periodos = (await Api.ListarAsync()).ToList();
     }
     catch (Exception ex)
@@ -193,6 +210,7 @@
   {
     periodoId = null;
     modelo = NuevoModelo();
+    periodoCerrado = false;
     errorFormulario = null;
     mostrarFormulario = true;
   }
@@ -211,6 +229,7 @@
       Estado = periodo.Estado,
       RowVersion = periodo.RowVersion
     };
+    periodoCerrado = periodo.Estado == 3;
     errorFormulario = null;
     mostrarFormulario = true;
   }
