@@ -13,6 +13,15 @@ public sealed class Docente : EntidadAuditable
     public byte HorasPermanenciaSemanal { get; set; } = 40;
     public byte CargaMaximaSemanal { get; set; } = 40;
     public bool Activo { get; set; } = true;
+    public ICollection<DocenteCarrera> Carreras { get; set; } = [];
+}
+
+public sealed class DocenteCarrera : EntidadAuditable
+{
+    public Guid DocenteId { get; set; }
+    public Docente Docente { get; set; } = null!;
+    public Guid CarreraId { get; set; }
+    public Carrera Carrera { get; set; } = null!;
 }
 
 public sealed class DisponibilidadDocente : EntidadAuditable

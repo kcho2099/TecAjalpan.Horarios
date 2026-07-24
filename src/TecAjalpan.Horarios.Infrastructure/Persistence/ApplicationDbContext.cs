@@ -20,6 +20,7 @@ public sealed class ApplicationDbContext(
     public DbSet<Grupo> Grupos => Set<Grupo>();
     public DbSet<OfertaMateria> OfertasMaterias => Set<OfertaMateria>();
     public DbSet<Docente> Docentes => Set<Docente>();
+    public DbSet<DocenteCarrera> DocentesCarreras => Set<DocenteCarrera>();
     public DbSet<DisponibilidadDocente> DisponibilidadesDocentes => Set<DisponibilidadDocente>();
     public DbSet<DisponibilidadBloque> DisponibilidadesBloques => Set<DisponibilidadBloque>();
     public DbSet<Espacio> Espacios => Set<Espacio>();
@@ -163,6 +164,21 @@ public sealed class ApplicationDbContext(
             entity.Property(x => x.Correo).HasMaxLength(256);
             entity.HasIndex(x => x.NumeroTrabajador).IsUnique();
             entity.HasIndex(x => x.Correo).IsUnique();
+        });
+        modelBuilder.Entity<DocenteCarrera>(entity =>
+        {
+            entity.ToTable("DocentesCarreras", "Recursos");
+            entity.HasIndex(x => new { x.DocenteId, x.CarreraId })
+                .IsUnique()
+                .HasFilter("[Eliminado] = 0");
+            entity.HasOne(x => x.Docente)
+                .WithMany(x => x.Carreras)
+                .HasForeignKey(x => x.DocenteId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.Carrera)
+                .WithMany()
+                .HasForeignKey(x => x.CarreraId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
         modelBuilder.Entity<DisponibilidadDocente>(entity =>
         {

@@ -944,3 +944,33 @@ main {
     grid-template-columns: 1fr;
   }
 }
+
+.docentes-form-grid .form-field {
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+}
+
+.docentes-table .table-secondary {
+  display: block;
+  margin-top: .25rem;
+  color: var(--gris);
+  font-size: .78rem;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+}
+
+.data-tag {
+  display: inline-flex;
+  padding: .25rem .48rem;
+  border: 1px solid #d8c7cc;
+  border-radius: 999px;
+  background: #faf5f6;
+  color: var(--vino);
+  font-size: .72rem;
+  font-weight: 800;
+}

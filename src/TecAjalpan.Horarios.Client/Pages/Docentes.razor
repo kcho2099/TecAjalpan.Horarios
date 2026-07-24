@@ -1,0 +1,464 @@
+@page "/docentes"
+@attribute [Authorize(Roles = "Administrador,Secretaría,Jefatura,Subdirección Académica")]
+@inject DocentesApi Api
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Docentes | Horarios Tec Ajalpan</PageTitle>
+
+<div class="page-heading">
+  <div>
+    <span class="eyebrow">Recursos académicos</span>
+    <h1>Docentes</h1>
+    <p>Administra la plantilla docente, su contratación, carga y carreras asociadas.</p>
+  </div>
+  @if (puedeAdministrar)
+  {
+    <button class="btn-primary" @onclick="NuevoDocente">+ Nuevo docente</button>
+  }
+</div>
+
+@if (!string.IsNullOrWhiteSpace(mensaje))
+{
+  <div class="alerta-exito">@mensaje</div>
+}
+@if (!string.IsNullOrWhiteSpace(error))
+{
+  <div class="alerta-error">@error</div>
+}
+
+<article class="panel catalogo-panel">
+  <div class="toolbar">
+    <label class="search-box">
+      <span>Buscar</span>
+      <input @bind="filtro" @bind:event="oninput"
+             placeholder="Nombre, número, correo o carrera…" />
+    </label>
+    <span class="record-count">@DocentesFiltrados.Count() docente(s)</span>
+  </div>
+
+  @if (cargando)
+  {
+    <div class="table-state">Cargando docentes…</div>
+  }
+  else if (!DocentesFiltrados.Any())
+  {
+    <div class="empty-state compact">
+      <div class="empty-icon">◇</div>
+      <h2>No hay docentes para mostrar</h2>
+      <p>Registra la plantilla docente y relaciónala con una o varias carreras.</p>
+      @if (puedeAdministrar)
+      {
+        <button class="btn-secondary" @onclick="NuevoDocente">Crear docente</button>
+      }
+    </div>
+  }
+  else
+  {
+    <div class="table-responsive">
+      <table class="data-table docentes-table">
+        <thead>
+          <tr>
+            <th>Núm. trabajador</th>
+            <th>Docente</th>
+            <th>Contratación</th>
+            <th>Carreras</th>
+            <th>Carga máxima</th>
+            <th>Estado</th>
+            @if (puedeAdministrar)
+            {
+              <th class="actions-column">Acciones</th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @foreach (var docente in DocentesFiltrados)
+          {
+            <tr class="@(!docente.Activo ? "row-inactive" : null)">
+              <td><strong>@docente.NumeroTrabajador</strong></td>
+              <td>
+                <strong>@docente.Apellidos, @docente.Nombres</strong>
+                <small class="table-secondary">@docente.Correo</small>
+              </td>
+              <td>@docente.TipoNombre</td>
+              <td>
+                <div class="tag-list">
+                  @foreach (var carrera in docente.Carreras)
+                  {
+                    <span class="data-tag" title="@carrera.Nombre">@carrera.Clave</span>
+                  }
+                </div>
+              </td>
+              <td>@docente.CargaMaximaSemanal h/semana</td>
+              <td>
+                <span class="status @(docente.Activo ? "status-active" : "status-closed")">
+                  @(docente.Activo ? "Activo" : "Inactivo")
+                </span>
+              </td>
+              @if (puedeAdministrar)
+              {
+                <td class="actions-column catalogo-actions">
+                  @if (docente.Activo)
+                  {
+                    <button class="btn-link" @onclick="() => Editar(docente)">Editar</button>
+                  }
+                  <button class="btn-link" @onclick="() => ConfirmarEstado(docente)">
+                    @(docente.Activo ? "Desactivar" : "Activar")
+                  </button>
+                </td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</article>
+
+@if (mostrarFormulario && puedeAdministrar)
+{
+  <div class="modal-backdrop" @onclick="CerrarFormulario">
+    <section class="modal-card modal-wide" role="dialog" aria-modal="true"
+             aria-labelledby="titulo-docente" @onclick:stopPropagation>
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">@(docenteId.HasValue ? "Editar registro" : "Nuevo registro")</span>
+          <h2 id="titulo-docente">@(docenteId.HasValue ? "Editar docente" : "Crear docente")</h2>
+        </div>
+        <button class="icon-button" type="button" title="Cerrar"
+                @onclick="CerrarFormulario">×</button>
+      </div>
+
+      <EditForm Model="modelo" OnValidSubmit="Guardar">
+        <DataAnnotationsValidator />
+        <div class="form-grid docentes-form-grid">
+          <div class="form-field">
+            <label for="numero-trabajador">Número de trabajador</label>
+            <InputText id="numero-trabajador" @bind-Value="modelo.NumeroTrabajador" />
+            <ValidationMessage For="() => modelo.NumeroTrabajador" />
+          </div>
+          <div class="form-field">
+            <label for="correo">Correo institucional</label>
+            <InputText id="correo" type="email" @bind-Value="modelo.Correo" />
+            <ValidationMessage For="() => modelo.Correo" />
+          </div>
+          <div class="form-field">
+            <label for="nombres">Nombres</label>
+            <InputText id="nombres" @bind-Value="modelo.Nombres" />
+            <ValidationMessage For="() => modelo.Nombres" />
+          </div>
+          <div class="form-field">
+            <label for="apellidos">Apellidos</label>
+            <InputText id="apellidos" @bind-Value="modelo.Apellidos" />
+            <ValidationMessage For="() => modelo.Apellidos" />
+          </div>
+          <div class="form-field">
+            <label for="tipo-docente">Tipo de contratación</label>
+            <InputSelect id="tipo-docente" @bind-Value="modelo.Tipo"
+                         @bind-Value:after="AjustarTipo">
+              <option value="1">Tiempo completo</option>
+              <option value="2">Asignatura</option>
+            </InputSelect>
+            <ValidationMessage For="() => modelo.Tipo" />
+          </div>
+          <div class="form-field">
+            <label for="horas-permanencia">Horas de permanencia semanales</label>
+            <InputNumber id="horas-permanencia"
+                         @bind-Value="modelo.HorasPermanenciaSemanal" />
+            <ValidationMessage For="() => modelo.HorasPermanenciaSemanal" />
+          </div>
+          <div class="form-field">
+            <label for="carga-maxima">Carga máxima semanal</label>
+            <InputNumber id="carga-maxima"
+                         @bind-Value="modelo.CargaMaximaSemanal" />
+            <ValidationMessage For="() => modelo.CargaMaximaSemanal" />
+          </div>
+          <fieldset class="career-selector full">
+            <legend>Carreras del docente</legend>
+            @if (carrerasDisponibles.Count == 0)
+            {
+              <div class="alerta-error">
+                No tienes carreras activas disponibles para realizar la asignación.
+              </div>
+            }
+            else
+            {
+              <div class="career-grid">
+                @foreach (var carrera in carrerasDisponibles)
+                {
+                  <label class="check-field">
+                    <input type="checkbox"
+                           checked="@modelo.CarreraIds.Contains(carrera.Id)"
+                           @onchange="e => CambiarCarrera(carrera.Id, e)" />
+                    <span>
+                      <strong>@carrera.Clave</strong>
+                      <small>@carrera.Nombre</small>
+                    </span>
+                  </label>
+                }
+              </div>
+            }
+            <ValidationMessage For="() => modelo.CarreraIds" />
+          </fieldset>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(errorFormulario))
+        {
+          <div class="alerta-error modal-alert">@errorFormulario</div>
+        }
+        <div class="modal-actions">
+          <button class="btn-ghost" type="button" @onclick="CerrarFormulario">Cancelar</button>
+          <button class="btn-primary" type="submit"
+                  disabled="@(procesando || carrerasDisponibles.Count == 0)">
+            @(procesando ? "Guardando…" : "Guardar docente")
+          </button>
+        </div>
+      </EditForm>
+    </section>
+  </div>
+}
+
+@if (docenteAccion is not null && puedeAdministrar)
+{
+  <div class="modal-backdrop" @onclick="CancelarEstado">
+    <section class="modal-card confirm-card" role="dialog" aria-modal="true"
+             @onclick:stopPropagation>
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">Confirmar cambio</span>
+          <h2>@(docenteAccion.Activo ? "Desactivar docente" : "Activar docente")</h2>
+        </div>
+        <button class="icon-button" type="button" title="Cerrar"
+                @onclick="CancelarEstado">×</button>
+      </div>
+      <p>
+        @(docenteAccion.Activo
+          ? $"{docenteAccion.Nombres} {docenteAccion.Apellidos} dejará de estar disponible para nuevas cargas y horarios."
+          : $"{docenteAccion.Nombres} {docenteAccion.Apellidos} volverá a estar disponible.")
+      </p>
+      @if (!string.IsNullOrWhiteSpace(errorAccion))
+      {
+        <div class="alerta-error">@errorAccion</div>
+      }
+      <div class="modal-actions">
+        <button class="btn-ghost" type="button" @onclick="CancelarEstado">Cancelar</button>
+        <button class="btn-primary" type="button" disabled="@procesando"
+                @onclick="CambiarEstado">
+          @(procesando ? "Procesando…" : docenteAccion.Activo ? "Desactivar" : "Activar")
+        </button>
+      </div>
+    </section>
+  </div>
+}
+
+@code {
+  private List<DocenteDto> docentes = [];
+  private List<CarreraDto> carrerasDisponibles = [];
+  private GuardarDocenteRequest modelo = new();
+  private Guid? docenteId;
+  private DocenteDto? docenteAccion;
+  private string filtro = string.Empty;
+  private string? mensaje;
+  private string? error;
+  private string? errorFormulario;
+  private string? errorAccion;
+  private bool cargando = true;
+  private bool procesando;
+  private bool mostrarFormulario;
+  private bool puedeAdministrar;
+
+  private IEnumerable<DocenteDto> DocentesFiltrados =>
+    docentes.Where(x => string.IsNullOrWhiteSpace(filtro)
+      || x.NumeroTrabajador.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+      || x.Nombres.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+      || x.Apellidos.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+      || x.Correo.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+      || x.TipoNombre.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+      || x.Carreras.Any(c =>
+          c.Clave.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+          || c.Nombre.Contains(filtro, StringComparison.OrdinalIgnoreCase)));
+
+  protected override async Task OnInitializedAsync()
+  {
+    try
+    {
+      var autenticacion =
+        await AuthenticationStateProvider.GetAuthenticationStateAsync();
+      puedeAdministrar =
+        autenticacion.User.IsInRole("Administrador")
+        || autenticacion.User.IsInRole("Secretaría");
+
+      var docentesTask = Api.ListarAsync();
+      var carrerasTask = Api.ListarCarrerasDisponiblesAsync();
+      await Task.WhenAll(docentesTask, carrerasTask);
+      docentes = (await docentesTask).ToList();
+      carrerasDisponibles = (await carrerasTask).ToList();
+    }
+    catch (Exception ex)
+    {
+      error = $"No fue posible cargar los docentes: {ex.Message}";
+    }
+    finally
+    {
+      cargando = false;
+    }
+  }
+
+  private void NuevoDocente()
+  {
+    docenteId = null;
+    modelo = new GuardarDocenteRequest();
+    errorFormulario = null;
+    mostrarFormulario = true;
+  }
+
+  private void Editar(DocenteDto docente)
+  {
+    if (!puedeAdministrar || !docente.Activo)
+    {
+      return;
+    }
+
+    docenteId = docente.Id;
+    modelo = new GuardarDocenteRequest
+    {
+      NumeroTrabajador = docente.NumeroTrabajador,
+      Nombres = docente.Nombres,
+      Apellidos = docente.Apellidos,
+      Correo = docente.Correo,
+      Tipo = docente.Tipo,
+      HorasPermanenciaSemanal = docente.HorasPermanenciaSemanal,
+      CargaMaximaSemanal = docente.CargaMaximaSemanal,
+      CarreraIds = docente.Carreras.Select(x => x.Id).ToList(),
+      RowVersion = docente.RowVersion
+    };
+    errorFormulario = null;
+    mostrarFormulario = true;
+  }
+
+  private void AjustarTipo()
+  {
+    if (modelo.Tipo == 1)
+    {
+      modelo.HorasPermanenciaSemanal = 40;
+      modelo.CargaMaximaSemanal = 40;
+    }
+  }
+
+  private void CambiarCarrera(Guid carreraId, ChangeEventArgs args)
+  {
+    var seleccionada = args.Value is true
+      || bool.TryParse(args.Value?.ToString(), out var valor) && valor;
+    if (seleccionada && !modelo.CarreraIds.Contains(carreraId))
+    {
+      modelo.CarreraIds.Add(carreraId);
+    }
+    else if (!seleccionada)
+    {
+      modelo.CarreraIds.Remove(carreraId);
+    }
+  }
+
+  private async Task Guardar()
+  {
+    procesando = true;
+    errorFormulario = null;
+    try
+    {
+      var resultado = await Api.GuardarAsync(docenteId, modelo);
+      if (!resultado.Correcto || resultado.Docente is null)
+      {
+        errorFormulario = resultado.Mensaje;
+        return;
+      }
+
+      ActualizarLista(resultado.Docente);
+      mensaje = docenteId.HasValue
+        ? "Docente actualizado correctamente."
+        : "Docente creado correctamente.";
+      mostrarFormulario = false;
+    }
+    catch (Exception ex)
+    {
+      errorFormulario = $"No fue posible guardar: {ex.Message}";
+    }
+    finally
+    {
+      procesando = false;
+    }
+  }
+
+  private void ConfirmarEstado(DocenteDto docente)
+  {
+    docenteAccion = docente;
+    errorAccion = null;
+  }
+
+  private async Task CambiarEstado()
+  {
+    if (docenteAccion is null)
+    {
+      return;
+    }
+
+    procesando = true;
+    errorAccion = null;
+    try
+    {
+      var resultado = await Api.CambiarEstadoAsync(docenteAccion);
+      if (!resultado.Correcto || resultado.Docente is null)
+      {
+        errorAccion = resultado.Mensaje;
+        return;
+      }
+
+      ActualizarLista(resultado.Docente);
+      mensaje = resultado.Docente.Activo
+        ? "Docente activado correctamente."
+        : "Docente desactivado correctamente.";
+      docenteAccion = null;
+    }
+    catch (Exception ex)
+    {
+      errorAccion = $"No fue posible cambiar el estado: {ex.Message}";
+    }
+    finally
+    {
+      procesando = false;
+    }
+  }
+
+  private void ActualizarLista(DocenteDto docente)
+  {
+    var indice = docentes.FindIndex(x => x.Id == docente.Id);
+    if (indice >= 0)
+    {
+      docentes[indice] = docente;
+    }
+    else
+    {
+      docentes.Add(docente);
+    }
+
+    docentes = docentes
+      .OrderByDescending(x => x.Activo)
+      .ThenBy(x => x.Apellidos)
+      .ThenBy(x => x.Nombres)
+      .ToList();
+  }
+
+  private void CerrarFormulario()
+  {
+    if (!procesando)
+    {
+      mostrarFormulario = false;
+    }
+  }
+
+  private void CancelarEstado()
+  {
+    if (!procesando)
+    {
+      docenteAccion = null;
+    }
+  }
+}
