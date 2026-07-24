@@ -72,6 +72,14 @@ public sealed class PeriodosController(IPeriodoRepository repository) : Controll
             return NotFound();
         }
 
+        if (periodo.Estado == EstadoPeriodo.Cerrado)
+        {
+            return Conflict(new
+            {
+                mensaje = "El periodo está cerrado y no puede editarse. Un administrador debe reabrirlo antes de modificar sus datos."
+            });
+        }
+
         if (!CoincideRowVersion(request.RowVersion, periodo.RowVersion))
         {
             return Conflict(new
@@ -87,16 +95,6 @@ public sealed class PeriodosController(IPeriodoRepository repository) : Controll
             return StatusCode(StatusCodes.Status403Forbidden, new
             {
                 mensaje = "Sólo un administrador puede cambiar la duración del periodo a un valor distinto de 16 semanas."
-            });
-        }
-
-        if (!EsAdministrador()
-            && periodo.Estado == EstadoPeriodo.Cerrado
-            && request.Estado != (byte)EstadoPeriodo.Cerrado)
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, new
-            {
-                mensaje = "El periodo está cerrado. Sólo un administrador puede volverlo a Configuración o Activo."
             });
         }
 
@@ -116,6 +114,52 @@ public sealed class PeriodosController(IPeriodoRepository repository) : Controll
         catch (DbUpdateException)
         {
             return Conflict(new { mensaje = "Ya existe un periodo con ese nombre." });
+        }
+
+        return Ok(Mapear(periodo));
+    }
+
+    [HttpPost("{id:guid}/reabrir")]
+    [Authorize(Roles = Roles.Administrador)]
+    public async Task<ActionResult<PeriodoDto>> Reabrir(
+        Guid id,
+        ReabrirPeriodoRequest request,
+        CancellationToken cancellationToken)
+    {
+        var periodo = await repository.ObtenerAsync(id, cancellationToken);
+        if (periodo is null)
+        {
+            return NotFound();
+        }
+
+        if (periodo.Estado != EstadoPeriodo.Cerrado)
+        {
+            return Conflict(new
+            {
+                mensaje = "El periodo ya está abierto."
+            });
+        }
+
+        if (!CoincideRowVersion(request.RowVersion, periodo.RowVersion))
+        {
+            return Conflict(new
+            {
+                mensaje = "El periodo fue modificado por otra persona. Recarga los datos e inténtalo nuevamente."
+            });
+        }
+
+        periodo.Estado = EstadoPeriodo.Configuracion;
+
+        try
+        {
+            await repository.GuardarCambiosAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict(new
+            {
+                mensaje = "El periodo cambió mientras intentabas reabrirlo. Recarga los datos e inténtalo nuevamente."
+            });
         }
 
         return Ok(Mapear(periodo));
