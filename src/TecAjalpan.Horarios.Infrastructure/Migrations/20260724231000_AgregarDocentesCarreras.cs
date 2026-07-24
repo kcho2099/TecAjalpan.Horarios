@@ -1,14 +1,10 @@
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
-using TecAjalpan.Horarios.Infrastructure.Persistence;
 
 #nullable disable
 
 namespace TecAjalpan.Horarios.Infrastructure.Migrations;
 
-[DbContext(typeof(ApplicationDbContext))]
-[Migration("20260724231000_AgregarDocentesCarreras")]
-public sealed class AgregarDocentesCarreras : Migration
+public partial class AgregarDocentesCarreras : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
     {
