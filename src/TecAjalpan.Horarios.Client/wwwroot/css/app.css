@@ -697,6 +697,12 @@ main {
   gap: 7px;
 }
 
+.periodos-form-grid .form-field {
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+}
+
 .form-field.full, .check-field.full {
   grid-column: 1 / -1;
 }
@@ -709,6 +715,16 @@ main {
 .validation-message {
   color: #9c2026;
   font-size: 12px;
+}
+
+.periodos-form-grid .form-field > small {
+  color: var(--gris);
+  line-height: 1.4;
+}
+
+.btn-link:disabled {
+  opacity: .55;
+  cursor: wait;
 }
 
 .check-field {
@@ -780,6 +796,7 @@ main {
     grid-template-columns: 1fr;
   }
 }
+
 .temporary-password {
   display: flex;
   align-items: center;
