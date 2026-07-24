@@ -25,7 +25,7 @@ public sealed class GuardarPeriodoRequest : IValidatableObject
     public DateOnly FechaFin { get; set; } = DateOnly.FromDateTime(DateTime.Today.AddMonths(5));
 
     [Range(1, 52, ErrorMessage = "Las semanas deben estar entre 1 y 52.")]
-    public byte Semanas { get; set; } = 16;
+    public int Semanas { get; set; } = 16;
 
     public bool SemestresPares { get; set; }
 
