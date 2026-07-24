@@ -46,3 +46,5 @@ public sealed class GuardarPeriodoRequest : IValidatableObject
         }
     }
 }
+
+public sealed record ReabrirPeriodoRequest(string RowVersion);
