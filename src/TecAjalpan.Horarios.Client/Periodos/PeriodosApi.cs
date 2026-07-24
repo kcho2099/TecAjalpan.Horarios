@@ -38,6 +38,34 @@ public sealed class PeriodosApi(HttpClient httpClient)
             null);
     }
 
+    public async Task<ResultadoPeriodo> ReabrirAsync(
+        Guid id,
+        string rowVersion,
+        CancellationToken cancellationToken = default)
+    {
+        var token = await ObtenerAntiforgeryAsync(cancellationToken);
+        using var message = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"api/periodos/{id}/reabrir")
+        {
+            Content = JsonContent.Create(new ReabrirPeriodoRequest(rowVersion))
+        };
+        message.Headers.TryAddWithoutValidation("X-XSRF-TOKEN", token);
+
+        using var response = await httpClient.SendAsync(message, cancellationToken);
+        if (response.IsSuccessStatusCode)
+        {
+            var periodo = await response.Content.ReadFromJsonAsync<PeriodoDto>(
+                cancellationToken: cancellationToken);
+            return new ResultadoPeriodo(true, null, periodo);
+        }
+
+        return new ResultadoPeriodo(
+            false,
+            await LeerMensajeAsync(response, cancellationToken),
+            null);
+    }
+
     private async Task<string> ObtenerAntiforgeryAsync(CancellationToken cancellationToken)
     {
         var response = await httpClient.GetFromJsonAsync<AntiforgeryDto>(
@@ -60,11 +88,11 @@ public sealed class PeriodosApi(HttpClient httpClient)
         {
             var error = await response.Content.ReadFromJsonAsync<ApiError>(
                 cancellationToken: cancellationToken);
-            return error?.Mensaje ?? "No fue posible guardar el periodo.";
+            return error?.Mensaje ?? "No fue posible completar la operación.";
         }
         catch
         {
-            return "No fue posible guardar el periodo.";
+            return "No fue posible completar la operación.";
         }
     }
 
