@@ -95,7 +95,7 @@ public sealed class PeriodosController(IPeriodoRepository repository) : Controll
         periodo.Nombre = request.Nombre.Trim();
         periodo.FechaInicio = request.FechaInicio;
         periodo.FechaFin = request.FechaFin;
-        periodo.Semanas = request.Semanas;
+        periodo.Semanas = checked((byte)request.Semanas);
         periodo.SemestresPares = request.SemestresPares;
         periodo.PermitirExcepcionSemestre = request.PermitirExcepcionSemestre;
         periodo.Estado = (EstadoPeriodo)request.Estado;
