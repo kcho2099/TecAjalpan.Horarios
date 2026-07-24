@@ -38,11 +38,14 @@ public sealed class GuardarUsuarioRequest
 
     [Required(ErrorMessage = "Selecciona un rol.")]
     public string Rol { get; set; } = string.Empty;
-
-    public List<Guid> Carreras { get; set; } = [];
 }
 
 public sealed class CambiarEstadoUsuarioRequest
 {
     public bool Activo { get; set; }
+}
+
+public sealed class AsignarCarrerasUsuarioRequest
+{
+    public List<Guid> Carreras { get; set; } = [];
 }

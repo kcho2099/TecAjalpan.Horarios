@@ -39,6 +39,19 @@ public sealed class UsuariosApi(HttpClient httpClient)
             new CambiarEstadoUsuarioRequest { Activo = activo },
             cancellationToken);
 
+    public Task<ResultadoPeticionUsuario> AsignarCarrerasAsync(
+        string id,
+        IReadOnlyCollection<Guid> carreras,
+        CancellationToken cancellationToken = default) =>
+        EnviarAsync(
+            HttpMethod.Patch,
+            $"api/usuarios/{id}/carreras",
+            new AsignarCarrerasUsuarioRequest
+            {
+                Carreras = carreras.Distinct().ToList()
+            },
+            cancellationToken);
+
     public Task<ResultadoPeticionUsuario> RestablecerContrasenaAsync(
         string id,
         CancellationToken cancellationToken = default) =>

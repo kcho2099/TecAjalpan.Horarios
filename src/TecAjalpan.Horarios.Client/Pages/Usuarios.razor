@@ -1,6 +1,7 @@
 @page "/usuarios"
-@attribute [Authorize(Roles = "Administrador")]
+@attribute [Authorize(Roles = "Administrador,Subdirección Académica")]
 @inject UsuariosApi Api
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Usuarios | Horarios Tec Ajalpan</PageTitle>
 
@@ -10,7 +11,10 @@
     <h1>Usuarios y roles</h1>
     <p>Administra las cuentas, sus permisos y las carreras a las que pueden acceder.</p>
   </div>
-  <button class="btn-primary" @onclick="NuevoUsuario">+ Nuevo usuario</button>
+  @if (esAdministrador)
+  {
+    <button class="btn-primary" @onclick="NuevoUsuario">+ Nuevo usuario</button>
+  }
 </div>
 
 @if (!string.IsNullOrWhiteSpace(mensaje))
@@ -53,7 +57,10 @@
       <div class="empty-icon">♙</div>
       <h2>No hay usuarios para mostrar</h2>
       <p>Crea una cuenta para comenzar a delegar las funciones del sistema.</p>
-      <button class="btn-secondary" @onclick="NuevoUsuario">Crear usuario</button>
+      @if (esAdministrador)
+      {
+        <button class="btn-secondary" @onclick="NuevoUsuario">Crear usuario</button>
+      }
     </div>
   }
   else
@@ -82,7 +89,14 @@
               <td>
                 @if (usuario.CarrerasNombres.Count == 0)
                 {
-                  <span class="muted">Todas / sin alcance</span>
+                  @if (TieneAlcanceInstitucional(usuario.Rol))
+                  {
+                    <span class="muted">Alcance institucional</span>
+                  }
+                  else
+                  {
+                    <span class="status status-draft">Sin asignar</span>
+                  }
                 }
                 else
                 {
@@ -105,14 +119,23 @@
                 </span>
               </td>
               <td class="actions-column user-actions">
-                <button class="btn-link" @onclick="() => Editar(usuario)">Editar</button>
-                <button class="btn-link" @onclick="() => ConfirmarRestablecimiento(usuario)">
-                  Restablecer clave
-                </button>
-                <button class="btn-link @(usuario.Activo ? "danger-link" : null)"
-                        @onclick="() => ConfirmarEstado(usuario)">
-                  @(usuario.Activo ? "Desactivar" : "Activar")
-                </button>
+                @if (!TieneAlcanceInstitucional(usuario.Rol))
+                {
+                  <button class="btn-link" @onclick="() => AbrirAsignacion(usuario)">
+                    Asignar carreras
+                  </button>
+                }
+                @if (esAdministrador)
+                {
+                  <button class="btn-link" @onclick="() => Editar(usuario)">Editar</button>
+                  <button class="btn-link" @onclick="() => ConfirmarRestablecimiento(usuario)">
+                    Restablecer clave
+                  </button>
+                  <button class="btn-link @(usuario.Activo ? "danger-link" : null)"
+                          @onclick="() => ConfirmarEstado(usuario)">
+                    @(usuario.Activo ? "Desactivar" : "Activar")
+                  </button>
+                }
               </td>
             </tr>
           }
@@ -122,7 +145,7 @@
   }
 </article>
 
-@if (mostrarFormulario)
+@if (mostrarFormulario && esAdministrador)
 {
   <div class="modal-backdrop" @onclick="CerrarFormulario">
     <section class="modal-card modal-wide" role="dialog" aria-modal="true"
@@ -161,31 +184,6 @@
             </InputSelect>
             <ValidationMessage For="() => modelo.Rol" />
           </div>
-          <fieldset class="form-field full career-selector">
-            <legend>Carreras asignadas</legend>
-            @if (catalogos.Carreras.Count == 0)
-            {
-              <p class="muted">Todavía no hay carreras activas registradas.</p>
-            }
-            else
-            {
-              <div class="career-grid">
-                @foreach (var carrera in catalogos.Carreras)
-                {
-                  <label class="check-field">
-                    <input type="checkbox"
-                           checked="@modelo.Carreras.Contains(carrera.Id)"
-                           @onchange="e => AlternarCarrera(carrera.Id, (bool?)e.Value == true)" />
-                    <span>
-                      <strong>@carrera.Nombre</strong>
-                      <small>@carrera.Clave</small>
-                    </span>
-                  </label>
-                }
-              </div>
-            }
-            <small>La asignación limita los datos visibles para los roles con alcance por carrera.</small>
-          </fieldset>
         </div>
 
         @if (!string.IsNullOrWhiteSpace(errorFormulario))
@@ -199,6 +197,66 @@
           </button>
         </div>
       </EditForm>
+    </section>
+  </div>
+}
+
+@if (usuarioCarreras is not null)
+{
+  <div class="modal-backdrop" @onclick="CerrarAsignacion">
+    <section class="modal-card modal-wide" role="dialog" aria-modal="true"
+             aria-labelledby="titulo-asignacion" @onclick:stopPropagation>
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">Alcance académico</span>
+          <h2 id="titulo-asignacion">Asignar carreras</h2>
+          <p>@usuarioCarreras.Nombre · @usuarioCarreras.Rol</p>
+        </div>
+        <button class="icon-button" type="button" title="Cerrar"
+                @onclick="CerrarAsignacion">×</button>
+      </div>
+
+      @if (catalogos.Carreras.Count == 0)
+      {
+        <p class="muted">Todavía no hay carreras activas registradas.</p>
+      }
+      else
+      {
+        <fieldset class="form-field career-selector">
+          <legend>Carreras disponibles</legend>
+          <div class="career-grid">
+            @foreach (var carrera in catalogos.Carreras)
+            {
+              <label class="check-field">
+                <input type="checkbox"
+                       checked="@carrerasSeleccionadas.Contains(carrera.Id)"
+                       @onchange="e => AlternarCarrera(carrera.Id, (bool?)e.Value == true)" />
+                <span>
+                  <strong>@carrera.Nombre</strong>
+                  <small>@carrera.Clave</small>
+                </span>
+              </label>
+            }
+          </div>
+          <small>
+            @(usuarioCarreras.Rol == "Jefatura"
+              ? "Jefatura puede tener como máximo una carrera."
+              : "Puedes asignar una o varias carreras. También puedes dejar la cuenta pendiente sin asignación.")
+          </small>
+        </fieldset>
+      }
+
+      @if (!string.IsNullOrWhiteSpace(errorAsignacion))
+      {
+        <div class="alerta-error modal-alert">@errorAsignacion</div>
+      }
+      <div class="modal-actions">
+        <button class="btn-ghost" type="button" @onclick="CerrarAsignacion">Cancelar</button>
+        <button class="btn-primary" type="button" disabled="@procesando"
+                @onclick="GuardarAsignacion">
+          @(procesando ? "Guardando…" : "Guardar asignación")
+        </button>
+      </div>
     </section>
   </div>
 }
@@ -232,16 +290,20 @@
   private GuardarUsuarioRequest modelo = new();
   private string? usuarioId;
   private UsuarioDto? usuarioAccion;
+  private UsuarioDto? usuarioCarreras;
+  private List<Guid> carrerasSeleccionadas = [];
   private AccionUsuario accion;
   private string filtro = string.Empty;
   private string? mensaje;
   private string? error;
   private string? errorFormulario;
   private string? errorAccion;
+  private string? errorAsignacion;
   private string? contrasenaTemporal;
   private bool cargando = true;
   private bool procesando;
   private bool mostrarFormulario;
+  private bool esAdministrador;
 
   private IEnumerable<UsuarioDto> UsuariosFiltrados =>
     usuarios.Where(x => string.IsNullOrWhiteSpace(filtro)
@@ -263,6 +325,10 @@
   {
     try
     {
+      var autenticacion =
+        await AuthenticationStateProvider.GetAuthenticationStateAsync();
+      esAdministrador = autenticacion.User.IsInRole("Administrador");
+
       var tareas = new[]
       {
         CargarUsuarios(),
@@ -301,8 +367,7 @@
     {
       Nombre = usuario.Nombre,
       Correo = usuario.Correo,
-      Rol = usuario.Rol,
-      Carreras = usuario.Carreras.ToList()
+      Rol = usuario.Rol
     };
     errorFormulario = null;
     mostrarFormulario = true;
@@ -310,13 +375,69 @@
 
   private void AlternarCarrera(Guid carreraId, bool seleccionada)
   {
-    if (seleccionada && !modelo.Carreras.Contains(carreraId))
+    if (usuarioCarreras is null)
     {
-      modelo.Carreras.Add(carreraId);
+      return;
+    }
+
+    if (seleccionada && usuarioCarreras.Rol == "Jefatura")
+    {
+      carrerasSeleccionadas.Clear();
+      carrerasSeleccionadas.Add(carreraId);
+    }
+    else if (seleccionada && !carrerasSeleccionadas.Contains(carreraId))
+    {
+      carrerasSeleccionadas.Add(carreraId);
     }
     else if (!seleccionada)
     {
-      modelo.Carreras.Remove(carreraId);
+      carrerasSeleccionadas.Remove(carreraId);
+    }
+  }
+
+  private void AbrirAsignacion(UsuarioDto usuario)
+  {
+    if (TieneAlcanceInstitucional(usuario.Rol))
+    {
+      return;
+    }
+
+    usuarioCarreras = usuario;
+    carrerasSeleccionadas = usuario.Carreras.ToList();
+    errorAsignacion = null;
+  }
+
+  private async Task GuardarAsignacion()
+  {
+    if (usuarioCarreras is null)
+    {
+      return;
+    }
+
+    procesando = true;
+    errorAsignacion = null;
+    try
+    {
+      var resultado = await Api.AsignarCarrerasAsync(
+        usuarioCarreras.Id,
+        carrerasSeleccionadas);
+      if (!resultado.Correcto || resultado.Resultado is null)
+      {
+        errorAsignacion = resultado.Mensaje;
+        return;
+      }
+
+      ActualizarLista(resultado.Resultado.Usuario);
+      mensaje = resultado.Resultado.Mensaje;
+      usuarioCarreras = null;
+    }
+    catch (Exception ex)
+    {
+      errorAsignacion = $"No fue posible guardar la asignación: {ex.Message}";
+    }
+    finally
+    {
+      procesando = false;
     }
   }
 
@@ -412,8 +533,18 @@
   }
 
   private void CerrarFormulario() => mostrarFormulario = false;
+  private void CerrarAsignacion()
+  {
+    if (!procesando)
+    {
+      usuarioCarreras = null;
+    }
+  }
   private void CancelarAccion() => usuarioAccion = null;
   private void OcultarContrasena() => contrasenaTemporal = null;
+
+  private static bool TieneAlcanceInstitucional(string rol) =>
+    rol is "Administrador" or "Subdirección Académica";
 
   private enum AccionUsuario
   {
