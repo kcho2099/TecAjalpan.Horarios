@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using TecAjalpan.Horarios.Client;
 using TecAjalpan.Horarios.Client.Auth;
 using TecAjalpan.Horarios.Client.Periodos;
+using TecAjalpan.Horarios.Client.Usuarios;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
@@ -22,6 +23,7 @@ builder.Services.AddScoped(sp =>
 });
 builder.Services.AddScoped<AuthApi>();
 builder.Services.AddScoped<PeriodosApi>();
+builder.Services.AddScoped<UsuariosApi>();
 builder.Services.AddScoped<EstadoAutenticacion>();
 builder.Services.AddScoped<AuthenticationStateProvider>(
     sp => sp.GetRequiredService<EstadoAutenticacion>());

@@ -1,0 +1,423 @@
+@page "/usuarios"
+@attribute [Authorize(Roles = "Administrador")]
+@inject UsuariosApi Api
+
+<PageTitle>Usuarios | Horarios Tec Ajalpan</PageTitle>
+
+<div class="page-heading">
+  <div>
+    <span class="eyebrow">Seguridad</span>
+    <h1>Usuarios y roles</h1>
+    <p>Administra las cuentas, sus permisos y las carreras a las que pueden acceder.</p>
+  </div>
+  <button class="btn-primary" @onclick="NuevoUsuario">+ Nuevo usuario</button>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(mensaje))
+{
+  <div class="alerta-exito">@mensaje</div>
+}
+@if (!string.IsNullOrWhiteSpace(error))
+{
+  <div class="alerta-error">@error</div>
+}
+@if (!string.IsNullOrWhiteSpace(contrasenaTemporal))
+{
+  <div class="temporary-password">
+    <div>
+      <strong>Contraseña temporal</strong>
+      <p>Entrégala al usuario por un medio seguro. Sólo se mostrará en esta pantalla.</p>
+    </div>
+    <code>@contrasenaTemporal</code>
+    <button class="icon-button" title="Ocultar" @onclick="OcultarContrasena">×</button>
+  </div>
+}
+
+<article class="panel usuarios-panel">
+  <div class="toolbar">
+    <label class="search-box">
+      <span>Buscar</span>
+      <input @bind="filtro" @bind:event="oninput"
+             placeholder="Nombre, correo o rol…" />
+    </label>
+    <span class="record-count">@UsuariosFiltrados.Count() usuario(s)</span>
+  </div>
+
+  @if (cargando)
+  {
+    <div class="table-state">Cargando usuarios…</div>
+  }
+  else if (!UsuariosFiltrados.Any())
+  {
+    <div class="empty-state compact">
+      <div class="empty-icon">♙</div>
+      <h2>No hay usuarios para mostrar</h2>
+      <p>Crea una cuenta para comenzar a delegar las funciones del sistema.</p>
+      <button class="btn-secondary" @onclick="NuevoUsuario">Crear usuario</button>
+    </div>
+  }
+  else
+  {
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Usuario</th>
+            <th>Rol</th>
+            <th>Carreras</th>
+            <th>Acceso</th>
+            <th>Estado</th>
+            <th class="actions-column">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          @foreach (var usuario in UsuariosFiltrados)
+          {
+            <tr class="@(!usuario.Activo ? "row-inactive" : null)">
+              <td>
+                <strong>@usuario.Nombre</strong>
+                <small>@usuario.Correo</small>
+              </td>
+              <td>@usuario.Rol</td>
+              <td>
+                @if (usuario.CarrerasNombres.Count == 0)
+                {
+                  <span class="muted">Todas / sin alcance</span>
+                }
+                else
+                {
+                  <span>@string.Join(", ", usuario.CarrerasNombres)</span>
+                }
+              </td>
+              <td>
+                @if (usuario.DebeCambiarContrasena)
+                {
+                  <span class="status status-draft">Cambio pendiente</span>
+                }
+                else
+                {
+                  <span class="status status-active">Configurado</span>
+                }
+              </td>
+              <td>
+                <span class="status @(usuario.Activo ? "status-active" : "status-closed")">
+                  @(usuario.Activo ? "Activo" : "Inactivo")
+                </span>
+              </td>
+              <td class="actions-column user-actions">
+                <button class="btn-link" @onclick="() => Editar(usuario)">Editar</button>
+                <button class="btn-link" @onclick="() => ConfirmarRestablecimiento(usuario)">
+                  Restablecer clave
+                </button>
+                <button class="btn-link @(usuario.Activo ? "danger-link" : null)"
+                        @onclick="() => ConfirmarEstado(usuario)">
+                  @(usuario.Activo ? "Desactivar" : "Activar")
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</article>
+
+@if (mostrarFormulario)
+{
+  <div class="modal-backdrop" @onclick="CerrarFormulario">
+    <section class="modal-card modal-wide" role="dialog" aria-modal="true"
+             aria-labelledby="titulo-usuario" @onclick:stopPropagation>
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">@(usuarioId is null ? "Nueva cuenta" : "Editar cuenta")</span>
+          <h2 id="titulo-usuario">@(usuarioId is null ? "Crear usuario" : "Editar usuario")</h2>
+        </div>
+        <button class="icon-button" type="button" title="Cerrar" @onclick="CerrarFormulario">×</button>
+      </div>
+
+      <EditForm Model="modelo" OnValidSubmit="Guardar">
+        <DataAnnotationsValidator />
+        <div class="form-grid">
+          <div class="form-field full">
+            <label for="nombre">Nombre completo</label>
+            <InputText id="nombre" @bind-Value="modelo.Nombre"
+                       placeholder="Ej. María López Hernández" />
+            <ValidationMessage For="() => modelo.Nombre" />
+          </div>
+          <div class="form-field">
+            <label for="correo">Correo institucional</label>
+            <InputText id="correo" type="email" @bind-Value="modelo.Correo"
+                       placeholder="usuario@ajalpan.tecnm.mx" />
+            <ValidationMessage For="() => modelo.Correo" />
+          </div>
+          <div class="form-field">
+            <label for="rol">Rol</label>
+            <InputSelect id="rol" @bind-Value="modelo.Rol">
+              <option value="">Selecciona un rol</option>
+              @foreach (var rol in catalogos.Roles)
+              {
+                <option value="@rol">@rol</option>
+              }
+            </InputSelect>
+            <ValidationMessage For="() => modelo.Rol" />
+          </div>
+          <fieldset class="form-field full career-selector">
+            <legend>Carreras asignadas</legend>
+            @if (catalogos.Carreras.Count == 0)
+            {
+              <p class="muted">Todavía no hay carreras activas registradas.</p>
+            }
+            else
+            {
+              <div class="career-grid">
+                @foreach (var carrera in catalogos.Carreras)
+                {
+                  <label class="check-field">
+                    <input type="checkbox"
+                           checked="@modelo.Carreras.Contains(carrera.Id)"
+                           @onchange="e => AlternarCarrera(carrera.Id, (bool?)e.Value == true)" />
+                    <span>
+                      <strong>@carrera.Nombre</strong>
+                      <small>@carrera.Clave</small>
+                    </span>
+                  </label>
+                }
+              </div>
+            }
+            <small>La asignación limita los datos visibles para los roles con alcance por carrera.</small>
+          </fieldset>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(errorFormulario))
+        {
+          <div class="alerta-error">@errorFormulario</div>
+        }
+        <div class="modal-actions">
+          <button class="btn-ghost" type="button" @onclick="CerrarFormulario">Cancelar</button>
+          <button class="btn-primary" type="submit" disabled="@procesando">
+            @(procesando ? "Guardando…" : "Guardar usuario")
+          </button>
+        </div>
+      </EditForm>
+    </section>
+  </div>
+}
+
+@if (usuarioAccion is not null)
+{
+  <div class="modal-backdrop" @onclick="CancelarAccion">
+    <section class="modal-card confirm-card" role="alertdialog" aria-modal="true"
+             @onclick:stopPropagation>
+      <span class="eyebrow">Confirmación</span>
+      <h2>@TituloAccion</h2>
+      <p>@MensajeAccion</p>
+      @if (!string.IsNullOrWhiteSpace(errorAccion))
+      {
+        <div class="alerta-error">@errorAccion</div>
+      }
+      <div class="modal-actions">
+        <button class="btn-ghost" type="button" @onclick="CancelarAccion">Cancelar</button>
+        <button class="btn-primary" type="button" disabled="@procesando"
+                @onclick="EjecutarAccion">
+          @(procesando ? "Procesando…" : "Confirmar")
+        </button>
+      </div>
+    </section>
+  </div>
+}
+
+@code {
+  private List<UsuarioDto> usuarios = [];
+  private CatalogosUsuarioDto catalogos = new([], []);
+  private GuardarUsuarioRequest modelo = new();
+  private string? usuarioId;
+  private UsuarioDto? usuarioAccion;
+  private AccionUsuario accion;
+  private string filtro = string.Empty;
+  private string? mensaje;
+  private string? error;
+  private string? errorFormulario;
+  private string? errorAccion;
+  private string? contrasenaTemporal;
+  private bool cargando = true;
+  private bool procesando;
+  private bool mostrarFormulario;
+
+  private IEnumerable<UsuarioDto> UsuariosFiltrados =>
+    usuarios.Where(x => string.IsNullOrWhiteSpace(filtro)
+      || x.Nombre.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+      || x.Correo.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+      || x.Rol.Contains(filtro, StringComparison.OrdinalIgnoreCase));
+
+  private string TituloAccion => accion == AccionUsuario.Restablecer
+    ? "Restablecer contraseña"
+    : usuarioAccion?.Activo == true ? "Desactivar usuario" : "Activar usuario";
+
+  private string MensajeAccion => accion == AccionUsuario.Restablecer
+    ? $"Se invalidará la contraseña actual de {usuarioAccion?.Nombre} y se generará una temporal."
+    : usuarioAccion?.Activo == true
+      ? $"{usuarioAccion.Nombre} ya no podrá iniciar sesión."
+      : $"{usuarioAccion?.Nombre} recuperará el acceso al sistema.";
+
+  protected override async Task OnInitializedAsync()
+  {
+    try
+    {
+      var tareas = new[]
+      {
+        CargarUsuarios(),
+        CargarCatalogos()
+      };
+      await Task.WhenAll(tareas);
+    }
+    catch (Exception ex)
+    {
+      error = $"No fue posible cargar el módulo: {ex.Message}";
+    }
+    finally
+    {
+      cargando = false;
+    }
+  }
+
+  private async Task CargarUsuarios() =>
+    usuarios = (await Api.ListarAsync()).ToList();
+
+  private async Task CargarCatalogos() =>
+    catalogos = await Api.ObtenerCatalogosAsync();
+
+  private void NuevoUsuario()
+  {
+    usuarioId = null;
+    modelo = new GuardarUsuarioRequest();
+    errorFormulario = null;
+    mostrarFormulario = true;
+  }
+
+  private void Editar(UsuarioDto usuario)
+  {
+    usuarioId = usuario.Id;
+    modelo = new GuardarUsuarioRequest
+    {
+      Nombre = usuario.Nombre,
+      Correo = usuario.Correo,
+      Rol = usuario.Rol,
+      Carreras = usuario.Carreras.ToList()
+    };
+    errorFormulario = null;
+    mostrarFormulario = true;
+  }
+
+  private void AlternarCarrera(Guid carreraId, bool seleccionada)
+  {
+    if (seleccionada && !modelo.Carreras.Contains(carreraId))
+    {
+      modelo.Carreras.Add(carreraId);
+    }
+    else if (!seleccionada)
+    {
+      modelo.Carreras.Remove(carreraId);
+    }
+  }
+
+  private async Task Guardar()
+  {
+    procesando = true;
+    errorFormulario = null;
+    try
+    {
+      var resultado = await Api.GuardarAsync(usuarioId, modelo);
+      if (!resultado.Correcto || resultado.Resultado is null)
+      {
+        errorFormulario = resultado.Mensaje;
+        return;
+      }
+
+      ActualizarLista(resultado.Resultado.Usuario);
+      contrasenaTemporal = resultado.Resultado.ContrasenaTemporal;
+      mensaje = resultado.Resultado.Mensaje;
+      mostrarFormulario = false;
+    }
+    catch (Exception ex)
+    {
+      errorFormulario = $"No fue posible guardar: {ex.Message}";
+    }
+    finally
+    {
+      procesando = false;
+    }
+  }
+
+  private void ConfirmarEstado(UsuarioDto usuario)
+  {
+    usuarioAccion = usuario;
+    accion = AccionUsuario.Estado;
+    errorAccion = null;
+  }
+
+  private void ConfirmarRestablecimiento(UsuarioDto usuario)
+  {
+    usuarioAccion = usuario;
+    accion = AccionUsuario.Restablecer;
+    errorAccion = null;
+  }
+
+  private async Task EjecutarAccion()
+  {
+    if (usuarioAccion is null)
+    {
+      return;
+    }
+
+    procesando = true;
+    errorAccion = null;
+    try
+    {
+      var resultado = accion == AccionUsuario.Restablecer
+        ? await Api.RestablecerContrasenaAsync(usuarioAccion.Id)
+        : await Api.CambiarEstadoAsync(usuarioAccion.Id, !usuarioAccion.Activo);
+
+      if (!resultado.Correcto || resultado.Resultado is null)
+      {
+        errorAccion = resultado.Mensaje;
+        return;
+      }
+
+      ActualizarLista(resultado.Resultado.Usuario);
+      contrasenaTemporal = resultado.Resultado.ContrasenaTemporal;
+      mensaje = resultado.Resultado.Mensaje;
+      usuarioAccion = null;
+    }
+    catch (Exception ex)
+    {
+      errorAccion = $"No fue posible completar la operación: {ex.Message}";
+    }
+    finally
+    {
+      procesando = false;
+    }
+  }
+
+  private void ActualizarLista(UsuarioDto usuario)
+  {
+    var indice = usuarios.FindIndex(x => x.Id == usuario.Id);
+    if (indice >= 0)
+    {
+      usuarios[indice] = usuario;
+    }
+    else
+    {
+      usuarios.Insert(0, usuario);
+    }
+  }
+
+  private void CerrarFormulario() => mostrarFormulario = false;
+  private void CancelarAccion() => usuarioAccion = null;
+  private void OcultarContrasena() => contrasenaTemporal = null;
+
+  private enum AccionUsuario
+  {
+    Estado,
+    Restablecer
+  }
+}
