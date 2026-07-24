@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using TecAjalpan.Horarios.Client;
 using TecAjalpan.Horarios.Client.Auth;
+using TecAjalpan.Horarios.Client.Carreras;
 using TecAjalpan.Horarios.Client.Periodos;
 using TecAjalpan.Horarios.Client.Usuarios;
 
@@ -22,6 +23,7 @@ builder.Services.AddScoped(sp =>
     };
 });
 builder.Services.AddScoped<AuthApi>();
+builder.Services.AddScoped<CarrerasApi>();
 builder.Services.AddScoped<PeriodosApi>();
 builder.Services.AddScoped<UsuariosApi>();
 builder.Services.AddScoped<EstadoAutenticacion>();

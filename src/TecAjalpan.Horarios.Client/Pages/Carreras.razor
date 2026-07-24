@@ -1,0 +1,349 @@
+@page "/carreras"
+@attribute [Authorize(Roles = "Administrador,Secretaría,Jefatura,Subdirección Académica")]
+@inject CarrerasApi Api
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Carreras | Horarios Tec Ajalpan</PageTitle>
+
+<div class="page-heading">
+  <div>
+    <span class="eyebrow">Configuración académica</span>
+    <h1>Carreras</h1>
+    <p>Administra las carreras disponibles para usuarios, docentes y oferta académica.</p>
+  </div>
+  @if (esAdministrador)
+  {
+    <button class="btn-primary" @onclick="NuevaCarrera">+ Nueva carrera</button>
+  }
+</div>
+
+@if (!string.IsNullOrWhiteSpace(mensaje))
+{
+  <div class="alerta-exito">@mensaje</div>
+}
+@if (!string.IsNullOrWhiteSpace(error))
+{
+  <div class="alerta-error">@error</div>
+}
+
+<article class="panel catalogo-panel">
+  <div class="toolbar">
+    <label class="search-box">
+      <span>Buscar</span>
+      <input @bind="filtro" @bind:event="oninput"
+             placeholder="Clave, nombre o estado…" />
+    </label>
+    <span class="record-count">@CarrerasFiltradas.Count() carrera(s)</span>
+  </div>
+
+  @if (cargando)
+  {
+    <div class="table-state">Cargando carreras…</div>
+  }
+  else if (!CarrerasFiltradas.Any())
+  {
+    <div class="empty-state compact">
+      <div class="empty-icon">◇</div>
+      <h2>No hay carreras para mostrar</h2>
+      <p>Registra las carreras que participarán en la planeación académica.</p>
+      @if (esAdministrador)
+      {
+        <button class="btn-secondary" @onclick="NuevaCarrera">Crear carrera</button>
+      }
+    </div>
+  }
+  else
+  {
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Clave</th>
+            <th>Carrera</th>
+            <th>Estado</th>
+            @if (esAdministrador)
+            {
+              <th class="actions-column">Acciones</th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @foreach (var carrera in CarrerasFiltradas)
+          {
+            <tr class="@(!carrera.Activo ? "row-inactive" : null)">
+              <td><strong>@carrera.Clave</strong></td>
+              <td>@carrera.Nombre</td>
+              <td>
+                <span class="status @(carrera.Activo ? "status-active" : "status-closed")">
+                  @(carrera.Activo ? "Activa" : "Inactiva")
+                </span>
+              </td>
+              @if (esAdministrador)
+              {
+                <td class="actions-column catalogo-actions">
+                  @if (carrera.Activo)
+                  {
+                    <button class="btn-link" @onclick="() => Editar(carrera)">Editar</button>
+                  }
+                  <button class="btn-link" @onclick="() => ConfirmarEstado(carrera)">
+                    @(carrera.Activo ? "Desactivar" : "Activar")
+                  </button>
+                </td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</article>
+
+@if (mostrarFormulario && esAdministrador)
+{
+  <div class="modal-backdrop" @onclick="CerrarFormulario">
+    <section class="modal-card" role="dialog" aria-modal="true"
+             aria-labelledby="titulo-carrera" @onclick:stopPropagation>
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">@(carreraId.HasValue ? "Editar registro" : "Nuevo registro")</span>
+          <h2 id="titulo-carrera">@(carreraId.HasValue ? "Editar carrera" : "Crear carrera")</h2>
+        </div>
+        <button class="icon-button" type="button" title="Cerrar"
+                @onclick="CerrarFormulario">×</button>
+      </div>
+
+      <EditForm Model="modelo" OnValidSubmit="Guardar">
+        <DataAnnotationsValidator />
+        <div class="form-grid catalogo-form-grid">
+          <div class="form-field">
+            <label for="clave">Clave</label>
+            <InputText id="clave" @bind-Value="modelo.Clave"
+                       placeholder="Ej. ISC" />
+            <ValidationMessage For="() => modelo.Clave" />
+          </div>
+          <div class="form-field full">
+            <label for="nombre">Nombre de la carrera</label>
+            <InputText id="nombre" @bind-Value="modelo.Nombre"
+                       placeholder="Ej. Ingeniería en Sistemas Computacionales" />
+            <ValidationMessage For="() => modelo.Nombre" />
+          </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(errorFormulario))
+        {
+          <div class="alerta-error modal-alert">@errorFormulario</div>
+        }
+        <div class="modal-actions">
+          <button class="btn-ghost" type="button" @onclick="CerrarFormulario">Cancelar</button>
+          <button class="btn-primary" type="submit" disabled="@procesando">
+            @(procesando ? "Guardando…" : "Guardar carrera")
+          </button>
+        </div>
+      </EditForm>
+    </section>
+  </div>
+}
+
+@if (carreraAccion is not null && esAdministrador)
+{
+  <div class="modal-backdrop" @onclick="CancelarEstado">
+    <section class="modal-card confirm-card" role="dialog" aria-modal="true"
+             @onclick:stopPropagation>
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">Confirmar cambio</span>
+          <h2>@(carreraAccion.Activo ? "Desactivar carrera" : "Activar carrera")</h2>
+        </div>
+        <button class="icon-button" type="button" title="Cerrar"
+                @onclick="CancelarEstado">×</button>
+      </div>
+      <p>
+        @(carreraAccion.Activo
+          ? $"La carrera {carreraAccion.Nombre} dejará de estar disponible para nuevas asignaciones."
+          : $"La carrera {carreraAccion.Nombre} volverá a estar disponible para asignaciones.")
+      </p>
+      @if (!string.IsNullOrWhiteSpace(errorAccion))
+      {
+        <div class="alerta-error">@errorAccion</div>
+      }
+      <div class="modal-actions">
+        <button class="btn-ghost" type="button" @onclick="CancelarEstado">Cancelar</button>
+        <button class="btn-primary" type="button" disabled="@procesando"
+                @onclick="CambiarEstado">
+          @(procesando ? "Procesando…" : carreraAccion.Activo ? "Desactivar" : "Activar")
+        </button>
+      </div>
+    </section>
+  </div>
+}
+
+@code {
+  private List<CarreraDto> carreras = [];
+  private GuardarCarreraRequest modelo = new();
+  private Guid? carreraId;
+  private CarreraDto? carreraAccion;
+  private string filtro = string.Empty;
+  private string? mensaje;
+  private string? error;
+  private string? errorFormulario;
+  private string? errorAccion;
+  private bool cargando = true;
+  private bool procesando;
+  private bool mostrarFormulario;
+  private bool esAdministrador;
+
+  private IEnumerable<CarreraDto> CarrerasFiltradas =>
+    carreras.Where(x => string.IsNullOrWhiteSpace(filtro)
+      || x.Clave.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+      || x.Nombre.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+      || (x.Activo ? "Activa" : "Inactiva")
+          .Contains(filtro, StringComparison.OrdinalIgnoreCase));
+
+  protected override async Task OnInitializedAsync()
+  {
+    try
+    {
+      var autenticacion =
+        await AuthenticationStateProvider.GetAuthenticationStateAsync();
+      esAdministrador = autenticacion.User.IsInRole("Administrador");
+      carreras = (await Api.ListarAsync()).ToList();
+    }
+    catch (Exception ex)
+    {
+      error = $"No fue posible cargar las carreras: {ex.Message}";
+    }
+    finally
+    {
+      cargando = false;
+    }
+  }
+
+  private void NuevaCarrera()
+  {
+    carreraId = null;
+    modelo = new GuardarCarreraRequest();
+    errorFormulario = null;
+    mostrarFormulario = true;
+  }
+
+  private void Editar(CarreraDto carrera)
+  {
+    if (!esAdministrador || !carrera.Activo)
+    {
+      return;
+    }
+
+    carreraId = carrera.Id;
+    modelo = new GuardarCarreraRequest
+    {
+      Clave = carrera.Clave,
+      Nombre = carrera.Nombre,
+      RowVersion = carrera.RowVersion
+    };
+    errorFormulario = null;
+    mostrarFormulario = true;
+  }
+
+  private async Task Guardar()
+  {
+    procesando = true;
+    errorFormulario = null;
+    try
+    {
+      var resultado = await Api.GuardarAsync(carreraId, modelo);
+      if (!resultado.Correcto || resultado.Carrera is null)
+      {
+        errorFormulario = resultado.Mensaje;
+        return;
+      }
+
+      ActualizarLista(resultado.Carrera);
+      mensaje = carreraId.HasValue
+        ? "Carrera actualizada correctamente."
+        : "Carrera creada correctamente.";
+      mostrarFormulario = false;
+    }
+    catch (Exception ex)
+    {
+      errorFormulario = $"No fue posible guardar: {ex.Message}";
+    }
+    finally
+    {
+      procesando = false;
+    }
+  }
+
+  private void ConfirmarEstado(CarreraDto carrera)
+  {
+    carreraAccion = carrera;
+    errorAccion = null;
+  }
+
+  private async Task CambiarEstado()
+  {
+    if (carreraAccion is null)
+    {
+      return;
+    }
+
+    procesando = true;
+    errorAccion = null;
+    try
+    {
+      var resultado = await Api.CambiarEstadoAsync(carreraAccion);
+      if (!resultado.Correcto || resultado.Carrera is null)
+      {
+        errorAccion = resultado.Mensaje;
+        return;
+      }
+
+      ActualizarLista(resultado.Carrera);
+      mensaje = resultado.Carrera.Activo
+        ? "Carrera activada correctamente."
+        : "Carrera desactivada correctamente.";
+      carreraAccion = null;
+    }
+    catch (Exception ex)
+    {
+      errorAccion = $"No fue posible cambiar el estado: {ex.Message}";
+    }
+    finally
+    {
+      procesando = false;
+    }
+  }
+
+  private void ActualizarLista(CarreraDto carrera)
+  {
+    var indice = carreras.FindIndex(x => x.Id == carrera.Id);
+    if (indice >= 0)
+    {
+      carreras[indice] = carrera;
+    }
+    else
+    {
+      carreras.Add(carrera);
+    }
+
+    carreras = carreras
+      .OrderByDescending(x => x.Activo)
+      .ThenBy(x => x.Nombre)
+      .ToList();
+  }
+
+  private void CerrarFormulario()
+  {
+    if (!procesando)
+    {
+      mostrarFormulario = false;
+    }
+  }
+
+  private void CancelarEstado()
+  {
+    if (!procesando)
+    {
+      carreraAccion = null;
+    }
+  }
+}
