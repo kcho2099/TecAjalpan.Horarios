@@ -95,50 +95,63 @@ else if (modelo is not null && DocenteSeleccionado is not null)
       </div>
     }
 
-    <h3>Disponibilidad para clases (08:00–16:00)</h3>
     @if (DocenteSeleccionado.Tipo == 2)
     {
+      <h3>Disponibilidad para clases (08:00–16:00)</h3>
       <p class="form-help">
-        Selecciona únicamente las ventanas reales del docente. El generador dará prioridad
-        a asignatura y buscará compactar sus clases para reducir días y huecos.
+        Selecciona las horas reales del docente. Puedes pulsar cualquier parte de la celda;
+        el generador dará prioridad a asignatura y compactará sus clases para reducir días y huecos.
       </p>
-    }
-    <div class="availability-table-wrap">
-      <table class="availability-table">
-        <thead>
-          <tr>
-            <th>Día</th>
-            @foreach (var hora in Horas)
-            {
-              <th>@hora</th>
-            }
-          </tr>
-        </thead>
-        <tbody>
-          @foreach (var dia in Dias)
-          {
+      <div class="availability-table-wrap">
+        <table class="availability-table">
+          <thead>
             <tr>
-              <th>@dia.Nombre</th>
-              @for (byte bloque = 1; bloque <= 8; bloque++)
+              <th scope="col">Hora</th>
+              @foreach (var dia in Dias)
               {
-                var bloqueLocal = bloque;
-                <td>
-                  <input type="checkbox"
-                         checked="@EstaDisponible(dia.Id, bloqueLocal)"
-                         @onchange="e => CambiarBloque(dia.Id, bloqueLocal, e)" />
-                </td>
+                <th scope="col">@dia.Nombre</th>
               }
             </tr>
-          }
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            @for (byte bloque = 1; bloque <= 8; bloque++)
+            {
+              var bloqueLocal = bloque;
+              <tr>
+                <th scope="row">@Horas[bloqueLocal - 1]</th>
+                @foreach (var dia in Dias)
+                {
+                  var diaLocal = dia;
+                  var seleccionada = EstaDisponible(diaLocal.Id, bloqueLocal);
+                  <td class="availability-cell-container">
+                    <button type="button"
+                            class="availability-cell @(seleccionada ? "is-selected" : null)"
+                            aria-pressed="@seleccionada"
+                            title="@($"{diaLocal.Nombre}, {Horas[bloqueLocal - 1]}")"
+                            @onclick="() => AlternarBloque(diaLocal.Id, bloqueLocal)">
+                      <span class="availability-check" aria-hidden="true">✓</span>
+                      <span class="visually-hidden">
+                        @(seleccionada ? "Disponible" : "No disponible")
+                      </span>
+                    </button>
+                  </td>
+                }
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
 
     <div class="modal-actions">
       @if (puedeCapturar)
       {
         <button class="btn-primary" disabled="@procesando" @onclick="Guardar">
-          @(procesando ? "Guardando…" : "Guardar disponibilidad")
+          @(procesando
+            ? "Guardando…"
+            : DocenteSeleccionado.Tipo == 1
+              ? "Guardar jornada"
+              : "Guardar disponibilidad")
         </button>
       }
       @if (puedeValidar && !modelo.Validada && !string.IsNullOrWhiteSpace(modelo.RowVersion))
@@ -192,7 +205,7 @@ else if (modelo is not null && DocenteSeleccionado is not null)
       var periodosTask = DocentesApi.ListarPeriodosDisponiblesAsync();
       await Task.WhenAll(docentesTask, periodosTask);
       docentes = (await docentesTask).ToList();
-      periodos = (await periodosTask).Where(x => x.Estado != 3).ToList();
+      periodos = (await periodosTask).Where(x => x.Estado == 2).ToList();
     }
     catch (Exception ex)
     {
@@ -275,20 +288,21 @@ else if (modelo is not null && DocenteSeleccionado is not null)
   private bool EstaDisponible(byte dia, byte bloque) =>
     modelo?.Bloques.Any(x => x.Dia == dia && x.Bloque == bloque) == true;
 
-  private void CambiarBloque(byte dia, byte bloque, ChangeEventArgs args)
+  private void AlternarBloque(byte dia, byte bloque)
   {
     if (modelo is null)
     {
       return;
     }
-    var marcado = args.Value is true
-      || bool.TryParse(args.Value?.ToString(), out var valor) && valor;
+
     var bloques = modelo.Bloques.ToList();
-    bloques.RemoveAll(x => x.Dia == dia && x.Bloque == bloque);
-    if (marcado)
+    var estabaDisponible = bloques.RemoveAll(
+      x => x.Dia == dia && x.Bloque == bloque) > 0;
+    if (!estabaDisponible)
     {
       bloques.Add(new DisponibilidadBloqueDto(dia, bloque, false));
     }
+
     modelo = modelo with { Bloques = bloques, Validada = false };
   }
 
@@ -305,8 +319,12 @@ else if (modelo is not null && DocenteSeleccionado is not null)
       var request = new GuardarDisponibilidadDocenteRequest
       {
         PeriodoId = periodoId,
-        Jornadas = modelo.Jornadas.ToList(),
-        Bloques = modelo.Bloques.ToList(),
+        Jornadas = DocenteSeleccionado?.Tipo == 1
+          ? modelo.Jornadas.ToList()
+          : [],
+        Bloques = DocenteSeleccionado?.Tipo == 2
+          ? modelo.Bloques.ToList()
+          : [],
         RowVersion = modelo.RowVersion
       };
       var resultado = await DocentesApi.GuardarDisponibilidadAsync(
