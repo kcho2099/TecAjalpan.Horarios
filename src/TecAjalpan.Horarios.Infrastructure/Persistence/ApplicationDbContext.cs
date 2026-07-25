@@ -128,6 +128,10 @@ public sealed class ApplicationDbContext(
             entity.ToTable("Periodos", "Academico");
             entity.Property(x => x.Nombre).HasMaxLength(120);
             entity.HasIndex(x => x.Nombre).IsUnique();
+            entity.HasIndex(x => x.Estado)
+                .IsUnique()
+                .HasDatabaseName("UX_Periodos_UnicoActivo")
+                .HasFilter("[Estado] = 2 AND [Eliminado] = 0");
         });
         modelBuilder.Entity<PeriodoCarrera>(entity =>
         {
