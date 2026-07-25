@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -27,7 +28,7 @@ public sealed class DisponibilidadesDocentesController(
             return NotFound();
         }
 
-        if (!TieneAcceso(docente))
+        if (!await TieneAccesoAsync(docente, cancellationToken))
         {
             return Forbid();
         }
@@ -62,7 +63,8 @@ public sealed class DisponibilidadesDocentesController(
             return NotFound();
         }
 
-        if (!docente.Activo || !PuedeCapturar(docente))
+        if (!docente.Activo
+            || !await PuedeCapturarAsync(docente, cancellationToken))
         {
             return Forbid();
         }
@@ -143,7 +145,7 @@ public sealed class DisponibilidadesDocentesController(
         {
             return NotFound();
         }
-        if (!TieneAcceso(docente))
+        if (!await TieneAccesoAsync(docente, cancellationToken))
         {
             return Forbid();
         }
@@ -177,21 +179,37 @@ public sealed class DisponibilidadesDocentesController(
             .Include(x => x.Carreras)
             .SingleOrDefaultAsync(x => x.Id == docenteId, cancellationToken);
 
-    private bool TieneAcceso(Docente docente) =>
-        User.IsInRole(Roles.Administrador)
-        || User.IsInRole(Roles.Subdireccion)
-        || docente.Carreras.Any(x =>
-            x.EsPrincipal && ObtenerCarrerasUsuario().Contains(x.CarreraId));
+    private async Task<bool> TieneAccesoAsync(
+        Docente docente,
+        CancellationToken cancellationToken)
+    {
+        if (User.IsInRole(Roles.Administrador)
+            || User.IsInRole(Roles.Subdireccion))
+        {
+            return true;
+        }
 
-    private bool PuedeCapturar(Docente docente) =>
-        User.IsInRole(Roles.Administrador)
-        || User.IsInRole(Roles.Secretaria) && TieneAcceso(docente);
+        var carreraPrincipalId = docente.Carreras
+            .Where(x => x.EsPrincipal)
+            .Select(x => (Guid?)x.CarreraId)
+            .SingleOrDefault();
+        var usuarioId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return carreraPrincipalId.HasValue
+            && usuarioId is not null
+            && await dbContext.UsuariosCarreras
+                .AsNoTracking()
+                .AnyAsync(
+                    x => x.UsuarioId == usuarioId
+                        && x.CarreraId == carreraPrincipalId.Value,
+                    cancellationToken);
+    }
 
-    private HashSet<Guid> ObtenerCarrerasUsuario() =>
-        User.FindAll("carrera")
-            .Select(x => Guid.TryParse(x.Value, out var id) ? id : Guid.Empty)
-            .Where(x => x != Guid.Empty)
-            .ToHashSet();
+    private async Task<bool> PuedeCapturarAsync(
+        Docente docente,
+        CancellationToken cancellationToken) =>
+        User.IsInRole(Roles.Administrador)
+        || User.IsInRole(Roles.Secretaria)
+            && await TieneAccesoAsync(docente, cancellationToken);
 
     private static string? ValidarReglas(
         TipoDocente tipo,
