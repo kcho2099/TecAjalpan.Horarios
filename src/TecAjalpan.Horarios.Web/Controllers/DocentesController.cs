@@ -254,11 +254,11 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
         }
 
         var numero = request.NumeroTrabajador.Trim().ToUpperInvariant();
-        var correo = request.Correo.Trim().ToUpperInvariant();
+        var correo = request.Correo.Trim().ToLowerInvariant();
         var duplicado = await dbContext.Docentes.AnyAsync(
             x => x.Id != docenteId
-                && (x.NumeroTrabajador.ToUpper() == numero
-                    || x.Correo.ToUpper() == correo),
+                && (x.NumeroTrabajador == numero
+                    || x.Correo == correo),
             cancellationToken);
         return duplicado
             ? "Ya existe un docente con ese número de trabajador o correo."
