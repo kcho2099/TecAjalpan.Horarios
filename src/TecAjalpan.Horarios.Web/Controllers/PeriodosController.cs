@@ -71,7 +71,10 @@ public sealed class PeriodosController(
         }
         catch (DbUpdateException)
         {
-            return Conflict(new { mensaje = "Ya existe un periodo con ese nombre." });
+            var mensaje = request.Estado == (byte)EstadoPeriodo.Activo
+                ? "Ya existe un periodo activo. Ciérralo antes de activar otro."
+                : "Ya existe un periodo con ese nombre.";
+            return Conflict(new { mensaje });
         }
 
         return CreatedAtAction(nameof(Obtener), new { id = periodo.Id }, Mapear(periodo));
@@ -83,6 +86,7 @@ public sealed class PeriodosController(
         GuardarPeriodoRequest request,
         CancellationToken cancellationToken)
     {
+        await CerrarPeriodosVencidosAsync(cancellationToken);
         var periodo = await repository.ObtenerAsync(id, cancellationToken);
         if (periodo is null)
         {
@@ -140,7 +144,10 @@ public sealed class PeriodosController(
         }
         catch (DbUpdateException)
         {
-            return Conflict(new { mensaje = "Ya existe un periodo con ese nombre." });
+            var mensaje = request.Estado == (byte)EstadoPeriodo.Activo
+                ? "Ya existe un periodo activo. Ciérralo antes de activar otro."
+                : "Ya existe un periodo con ese nombre.";
+            return Conflict(new { mensaje });
         }
 
         return Ok(Mapear(periodo));
