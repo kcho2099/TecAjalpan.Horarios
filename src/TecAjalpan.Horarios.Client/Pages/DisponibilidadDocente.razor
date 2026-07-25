@@ -179,7 +179,7 @@ else if (modelo is not null && DocenteSeleccionado is not null)
   private DocenteDto? DocenteSeleccionado => docentes.SingleOrDefault(x => x.Id == docenteId);
   private string CarreraPrincipal =>
     DocenteSeleccionado?.Carreras.SingleOrDefault(x => x.EsPrincipal)?.Nombre
-    ?? "Sin carrera contratante";
+    ?? "Sin carrera de adscripción";
 
   protected override async Task OnInitializedAsync()
   {
