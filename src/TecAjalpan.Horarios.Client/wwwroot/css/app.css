@@ -1074,3 +1074,123 @@ main {
   font-size: .72rem;
   font-weight: 800;
 }
+
+
+.career-card {
+  min-width: 0;
+  align-items: center;
+  cursor: default;
+}
+
+.career-checkbox {
+  flex: 0 0 auto;
+}
+
+.career-copy {
+  min-width: 0;
+  flex: 1;
+  cursor: pointer;
+}
+
+.adscription-switch {
+  width: 66px;
+  flex: 0 0 66px;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--gris);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.adscription-switch:disabled {
+  opacity: .42;
+  cursor: not-allowed;
+}
+
+.adscription-switch.is-active {
+  color: var(--vino);
+}
+
+.switch-track {
+  width: 34px;
+  height: 19px;
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 999px;
+  background: #d7d2d1;
+  transition: background-color .18s ease;
+}
+
+.switch-thumb {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 3px rgba(32, 28, 29, .3);
+  transform: translateX(0);
+  transition: transform .18s ease;
+}
+
+.adscription-switch.is-active .switch-track {
+  background: var(--vino);
+}
+
+.adscription-switch.is-active .switch-thumb {
+  transform: translateX(15px);
+}
+
+.pagination {
+  min-height: 68px;
+  padding: 14px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-top: 1px solid var(--borde);
+  background: #faf9f8;
+}
+
+.pagination-summary {
+  color: var(--gris);
+  font-size: 13px;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pagination-controls > span {
+  min-width: 92px;
+  color: var(--gris);
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pagination-button {
+  padding: 7px 11px;
+  font-size: 13px;
+}
+
+.pagination-button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 620px) {
+  .pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pagination-controls {
+    justify-content: space-between;
+  }
+}
