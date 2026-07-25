@@ -1,0 +1,360 @@
+@page "/disponibilidad"
+@attribute [Authorize(Roles = "Administrador,Secretaría,Jefatura,Subdirección Académica")]
+@inject DocentesApi DocentesApi
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Disponibilidad docente | Horarios Tec Ajalpan</PageTitle>
+
+<div class="page-heading">
+  <div>
+    <span class="eyebrow">Recursos académicos</span>
+    <h1>Disponibilidad docente</h1>
+    <p>Registra la jornada de permanencia y las ventanas disponibles para impartir clases por periodo.</p>
+  </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(mensaje))
+{
+  <div class="alerta-exito">@mensaje</div>
+}
+@if (!string.IsNullOrWhiteSpace(error))
+{
+  <div class="alerta-error">@error</div>
+}
+
+<article class="panel">
+  <div class="availability-filters">
+    <div class="form-field">
+      <label for="periodo">Periodo</label>
+      <select id="periodo" @bind="periodoId" @bind:after="CargarDisponibilidad">
+        <option value="@Guid.Empty">Selecciona un periodo</option>
+        @foreach (var periodo in periodos)
+        {
+          <option value="@periodo.Id">@periodo.Nombre</option>
+        }
+      </select>
+    </div>
+    <div class="form-field">
+      <label for="docente">Docente</label>
+      <select id="docente" @bind="docenteId" @bind:after="CargarDisponibilidad">
+        <option value="@Guid.Empty">Selecciona un docente</option>
+        @foreach (var docente in docentes.Where(x => x.Activo))
+        {
+          <option value="@docente.Id">@docente.Apellidos, @docente.Nombres</option>
+        }
+      </select>
+    </div>
+  </div>
+</article>
+
+@if (cargando)
+{
+  <div class="table-state">Cargando…</div>
+}
+else if (modelo is not null && DocenteSeleccionado is not null)
+{
+  <article class="panel availability-panel">
+    <div class="panel-title">
+      <div>
+        <h2>@DocenteSeleccionado.Apellidos, @DocenteSeleccionado.Nombres</h2>
+        <p>@DocenteSeleccionado.TipoNombre · @CarreraPrincipal</p>
+      </div>
+      <span class="status @(modelo.Validada ? "status-active" : "status-closed")">
+        @(modelo.Validada ? "Validada" : "Pendiente de validación")
+      </span>
+    </div>
+
+    @if (DocenteSeleccionado.Tipo == 1)
+    {
+      <h3>Jornada de permanencia</h3>
+      <p class="form-help">
+        Debe cubrir exactamente 8 horas de lunes a viernes. Puede iniciar desde las 07:00
+        y terminar hasta las 18:00.
+      </p>
+      <div class="workday-grid">
+        @foreach (var dia in DiasLaborales)
+        {
+          var jornada = ObtenerJornada(dia.Id);
+          <div class="workday-row">
+            <strong>@dia.Nombre</strong>
+            <label>
+              Entrada
+              <input type="time" min="07:00" max="10:00"
+                     value="@jornada.HoraInicio.ToString("HH:mm", CultureInfo.InvariantCulture)"
+                     @onchange="e => CambiarHora(dia.Id, true, e.Value?.ToString())" />
+            </label>
+            <label>
+              Salida
+              <input type="time" min="15:00" max="18:00"
+                     value="@jornada.HoraFin.ToString("HH:mm", CultureInfo.InvariantCulture)"
+                     @onchange="e => CambiarHora(dia.Id, false, e.Value?.ToString())" />
+            </label>
+            <span>8 horas</span>
+          </div>
+        }
+      </div>
+    }
+
+    <h3>Disponibilidad para clases (08:00–16:00)</h3>
+    @if (DocenteSeleccionado.Tipo == 2)
+    {
+      <p class="form-help">
+        Selecciona únicamente las ventanas reales del docente. El generador dará prioridad
+        a asignatura y buscará compactar sus clases para reducir días y huecos.
+      </p>
+    }
+    <div class="availability-table-wrap">
+      <table class="availability-table">
+        <thead>
+          <tr>
+            <th>Día</th>
+            @foreach (var hora in Horas)
+            {
+              <th>@hora</th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @foreach (var dia in Dias)
+          {
+            <tr>
+              <th>@dia.Nombre</th>
+              @for (byte bloque = 1; bloque <= 8; bloque++)
+              {
+                var bloqueLocal = bloque;
+                <td>
+                  <input type="checkbox"
+                         checked="@EstaDisponible(dia.Id, bloqueLocal)"
+                         @onchange="e => CambiarBloque(dia.Id, bloqueLocal, e)" />
+                </td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="modal-actions">
+      @if (puedeCapturar)
+      {
+        <button class="btn-primary" disabled="@procesando" @onclick="Guardar">
+          @(procesando ? "Guardando…" : "Guardar disponibilidad")
+        </button>
+      }
+      @if (puedeValidar && !modelo.Validada && !string.IsNullOrWhiteSpace(modelo.RowVersion))
+      {
+        <button class="btn-secondary" disabled="@procesando" @onclick="Validar">
+          Validar disponibilidad
+        </button>
+      }
+    </div>
+  </article>
+}
+
+@code {
+  private static readonly (byte Id, string Nombre)[] Dias =
+  [
+    (1, "Lunes"), (2, "Martes"), (3, "Miércoles"),
+    (4, "Jueves"), (5, "Viernes"), (6, "Sábado")
+  ];
+  private static readonly string[] Horas =
+  [
+    "08–09", "09–10", "10–11", "11–12",
+    "12–13", "13–14", "14–15", "15–16"
+  ];
+
+  private List<DocenteDto> docentes = [];
+  private List<PeriodoDto> periodos = [];
+  private DisponibilidadDocenteDto? modelo;
+  private Guid docenteId;
+  private Guid periodoId;
+  private bool cargando = true;
+  private bool procesando;
+  private bool puedeCapturar;
+  private bool puedeValidar;
+  private string? mensaje;
+  private string? error;
+
+  private IEnumerable<(byte Id, string Nombre)> DiasLaborales => Dias.Take(5);
+  private DocenteDto? DocenteSeleccionado => docentes.SingleOrDefault(x => x.Id == docenteId);
+  private string CarreraPrincipal =>
+    DocenteSeleccionado?.Carreras.SingleOrDefault(x => x.EsPrincipal)?.Nombre
+    ?? "Sin carrera contratante";
+
+  protected override async Task OnInitializedAsync()
+  {
+    try
+    {
+      var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+      puedeCapturar = auth.User.IsInRole("Administrador") || auth.User.IsInRole("Secretaría");
+      puedeValidar = auth.User.IsInRole("Administrador") || auth.User.IsInRole("Jefatura");
+      var docentesTask = DocentesApi.ListarAsync();
+      var periodosTask = DocentesApi.ListarPeriodosDisponiblesAsync();
+      await Task.WhenAll(docentesTask, periodosTask);
+      docentes = (await docentesTask).ToList();
+      periodos = (await periodosTask).Where(x => x.Estado != 3).ToList();
+    }
+    catch (Exception ex)
+    {
+      error = $"No fue posible cargar los catálogos: {ex.Message}";
+    }
+    finally
+    {
+      cargando = false;
+    }
+  }
+
+  private async Task CargarDisponibilidad()
+  {
+    mensaje = null;
+    error = null;
+    modelo = null;
+    if (docenteId == Guid.Empty || periodoId == Guid.Empty)
+    {
+      return;
+    }
+
+    cargando = true;
+    try
+    {
+      modelo = await DocentesApi.ObtenerDisponibilidadAsync(docenteId, periodoId);
+      if (modelo is not null && modelo.TipoDocente == 1 && modelo.Jornadas.Count == 0)
+      {
+        modelo = modelo with
+        {
+          Jornadas = DiasLaborales
+            .Select(x => new JornadaDocenteDto(x.Id, new TimeOnly(8, 0), new TimeOnly(16, 0)))
+            .ToArray()
+        };
+      }
+    }
+    catch (Exception ex)
+    {
+      error = $"No fue posible cargar la disponibilidad: {ex.Message}";
+    }
+    finally
+    {
+      cargando = false;
+    }
+  }
+
+  private JornadaDocenteDto ObtenerJornada(byte dia) =>
+    modelo?.Jornadas.Single(x => x.Dia == dia)
+    ?? new JornadaDocenteDto(dia, new TimeOnly(8, 0), new TimeOnly(16, 0));
+
+  private void CambiarHora(byte dia, bool inicio, string? valor)
+  {
+    if (modelo is null
+        || !TimeOnly.TryParse(
+          valor,
+          CultureInfo.InvariantCulture,
+          DateTimeStyles.None,
+          out var hora))
+    {
+      return;
+    }
+    var jornadas = modelo.Jornadas.ToList();
+    var indice = jornadas.FindIndex(x => x.Dia == dia);
+    var actual = indice >= 0
+      ? jornadas[indice]
+      : new JornadaDocenteDto(dia, new TimeOnly(8, 0), new TimeOnly(16, 0));
+    var nueva = inicio
+      ? actual with { HoraInicio = hora, HoraFin = hora.AddHours(8) }
+      : actual with { HoraInicio = hora.AddHours(-8), HoraFin = hora };
+    if (indice >= 0)
+    {
+      jornadas[indice] = nueva;
+    }
+    else
+    {
+      jornadas.Add(nueva);
+    }
+    modelo = modelo with { Jornadas = jornadas };
+  }
+
+  private bool EstaDisponible(byte dia, byte bloque) =>
+    modelo?.Bloques.Any(x => x.Dia == dia && x.Bloque == bloque) == true;
+
+  private void CambiarBloque(byte dia, byte bloque, ChangeEventArgs args)
+  {
+    if (modelo is null)
+    {
+      return;
+    }
+    var marcado = args.Value is true
+      || bool.TryParse(args.Value?.ToString(), out var valor) && valor;
+    var bloques = modelo.Bloques.ToList();
+    bloques.RemoveAll(x => x.Dia == dia && x.Bloque == bloque);
+    if (marcado)
+    {
+      bloques.Add(new DisponibilidadBloqueDto(dia, bloque, false));
+    }
+    modelo = modelo with { Bloques = bloques, Validada = false };
+  }
+
+  private async Task Guardar()
+  {
+    if (modelo is null)
+    {
+      return;
+    }
+    procesando = true;
+    error = null;
+    try
+    {
+      var request = new GuardarDisponibilidadDocenteRequest
+      {
+        PeriodoId = periodoId,
+        Jornadas = modelo.Jornadas.ToList(),
+        Bloques = modelo.Bloques.ToList(),
+        RowVersion = modelo.RowVersion
+      };
+      var resultado = await DocentesApi.GuardarDisponibilidadAsync(
+        docenteId, periodoId, request);
+      if (!resultado.Correcto || resultado.Disponibilidad is null)
+      {
+        error = resultado.Mensaje;
+        return;
+      }
+      modelo = resultado.Disponibilidad;
+      mensaje = "Disponibilidad guardada. Jefatura debe validarla antes de generar horarios.";
+    }
+    catch (Exception ex)
+    {
+      error = $"No fue posible guardar la disponibilidad: {ex.Message}";
+    }
+    finally
+    {
+      procesando = false;
+    }
+  }
+
+  private async Task Validar()
+  {
+    if (modelo is null)
+    {
+      return;
+    }
+    procesando = true;
+    error = null;
+    try
+    {
+      var resultado = await DocentesApi.ValidarDisponibilidadAsync(modelo);
+      if (!resultado.Correcto || resultado.Disponibilidad is null)
+      {
+        error = resultado.Mensaje;
+        return;
+      }
+      modelo = resultado.Disponibilidad;
+      mensaje = "Disponibilidad validada correctamente.";
+    }
+    catch (Exception ex)
+    {
+      error = $"No fue posible validar la disponibilidad: {ex.Message}";
+    }
+    finally
+    {
+      procesando = false;
+    }
+  }
+}

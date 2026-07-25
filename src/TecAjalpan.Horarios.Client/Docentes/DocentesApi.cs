@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using TecAjalpan.Horarios.Contracts.Carreras;
 using TecAjalpan.Horarios.Contracts.Docentes;
+using TecAjalpan.Horarios.Contracts.Periodos;
 
 namespace TecAjalpan.Horarios.Client.Docentes;
 
@@ -17,6 +18,12 @@ public sealed class DocentesApi(HttpClient httpClient)
         CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<CarreraDto[]>(
             "api/docentes/carreras-disponibles",
+            cancellationToken) ?? [];
+
+    public async Task<IReadOnlyList<PeriodoDto>> ListarPeriodosDisponiblesAsync(
+        CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<PeriodoDto[]>(
+            "api/docentes/periodos-disponibles",
             cancellationToken) ?? [];
 
     public Task<ResultadoDocente> GuardarAsync(
@@ -42,6 +49,34 @@ public sealed class DocentesApi(HttpClient httpClient)
             },
             cancellationToken);
 
+    public async Task<DisponibilidadDocenteDto?> ObtenerDisponibilidadAsync(
+        Guid docenteId,
+        Guid periodoId,
+        CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<DisponibilidadDocenteDto>(
+            $"api/docentes/{docenteId}/disponibilidad/{periodoId}",
+            cancellationToken);
+
+    public Task<ResultadoDisponibilidad> GuardarDisponibilidadAsync(
+        Guid docenteId,
+        Guid periodoId,
+        GuardarDisponibilidadDocenteRequest request,
+        CancellationToken cancellationToken = default) =>
+        EnviarDisponibilidadAsync(
+            HttpMethod.Put,
+            $"api/docentes/{docenteId}/disponibilidad/{periodoId}",
+            request,
+            cancellationToken);
+
+    public Task<ResultadoDisponibilidad> ValidarDisponibilidadAsync(
+        DisponibilidadDocenteDto disponibilidad,
+        CancellationToken cancellationToken = default) =>
+        EnviarDisponibilidadAsync(
+            HttpMethod.Post,
+            $"api/docentes/{disponibilidad.DocenteId}/disponibilidad/{disponibilidad.PeriodoId}/validar",
+            new ValidarDisponibilidadRequest(disponibilidad.RowVersion ?? string.Empty),
+            cancellationToken);
+
     private async Task<ResultadoDocente> EnviarAsync<T>(
         HttpMethod metodo,
         string url,
@@ -64,6 +99,34 @@ public sealed class DocentesApi(HttpClient httpClient)
         }
 
         return new ResultadoDocente(
+            false,
+            await LeerMensajeAsync(response, cancellationToken),
+            null);
+    }
+
+    private async Task<ResultadoDisponibilidad> EnviarDisponibilidadAsync<T>(
+        HttpMethod metodo,
+        string url,
+        T contenido,
+        CancellationToken cancellationToken)
+    {
+        var token = await ObtenerAntiforgeryAsync(cancellationToken);
+        using var message = new HttpRequestMessage(metodo, url)
+        {
+            Content = JsonContent.Create(contenido)
+        };
+        message.Headers.TryAddWithoutValidation("X-XSRF-TOKEN", token);
+
+        using var response = await httpClient.SendAsync(message, cancellationToken);
+        if (response.IsSuccessStatusCode)
+        {
+            var disponibilidad =
+                await response.Content.ReadFromJsonAsync<DisponibilidadDocenteDto>(
+                    cancellationToken: cancellationToken);
+            return new ResultadoDisponibilidad(true, null, disponibilidad);
+        }
+
+        return new ResultadoDisponibilidad(
             false,
             await LeerMensajeAsync(response, cancellationToken),
             null);
@@ -111,3 +174,8 @@ public sealed record ResultadoDocente(
     bool Correcto,
     string? Mensaje,
     DocenteDto? Docente);
+
+public sealed record ResultadoDisponibilidad(
+    bool Correcto,
+    string? Mensaje,
+    DisponibilidadDocenteDto? Disponibilidad);

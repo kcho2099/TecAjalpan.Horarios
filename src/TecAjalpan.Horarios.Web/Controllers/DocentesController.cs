@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using TecAjalpan.Horarios.Application.Security;
 using TecAjalpan.Horarios.Contracts.Carreras;
 using TecAjalpan.Horarios.Contracts.Docentes;
+using TecAjalpan.Horarios.Contracts.Periodos;
 using TecAjalpan.Horarios.Domain.Entities;
 using TecAjalpan.Horarios.Domain.Enums;
 using TecAjalpan.Horarios.Infrastructure.Persistence;
@@ -29,7 +30,7 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
         {
             var carreras = ObtenerCarrerasUsuario();
             consulta = consulta.Where(x =>
-                x.Carreras.Any(c => carreras.Contains(c.CarreraId)));
+                x.Carreras.Any(c => c.EsPrincipal && carreras.Contains(c.CarreraId)));
         }
 
         if (!User.IsInRole(Roles.Administrador)
@@ -75,6 +76,29 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
         return Ok(resultado);
     }
 
+    [HttpGet("periodos-disponibles")]
+    public async Task<ActionResult<IReadOnlyList<PeriodoDto>>> ListarPeriodosDisponibles(
+        CancellationToken cancellationToken)
+    {
+        var periodos = await dbContext.Periodos
+            .AsNoTracking()
+            .Where(x => x.Estado != EstadoPeriodo.Cerrado)
+            .OrderByDescending(x => x.FechaInicio)
+            .ToArrayAsync(cancellationToken);
+        return Ok(periodos.Select(x => new PeriodoDto(
+                x.Id,
+                x.Nombre,
+                x.FechaInicio,
+                x.FechaFin,
+                x.Semanas,
+                x.SemestresPares,
+                x.PermitirExcepcionSemestre,
+                (byte)x.Estado,
+                x.Estado == EstadoPeriodo.Activo ? "Activo" : "Configuración",
+                Convert.ToBase64String(x.RowVersion)))
+            .ToArray());
+    }
+
     [HttpPost]
     [Authorize(Roles = "Administrador,Secretaría")]
     public async Task<ActionResult<DocenteDto>> Crear(
@@ -91,7 +115,11 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
         Aplicar(request, docente);
         docente.Carreras = request.CarreraIds
             .Distinct()
-            .Select(id => new DocenteCarrera { CarreraId = id })
+            .Select(id => new DocenteCarrera
+            {
+                CarreraId = id,
+                EsPrincipal = id == request.CarreraPrincipalId
+            })
             .ToList();
         dbContext.Docentes.Add(docente);
 
@@ -135,7 +163,9 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
             });
         }
 
-        if (!PuedeAdministrar(docente.Carreras.Select(x => x.CarreraId)))
+        var carreraPrincipalActual = docente.Carreras.SingleOrDefault(x => x.EsPrincipal);
+        if (carreraPrincipalActual is null
+            || !PuedeAdministrarPrincipal(carreraPrincipalActual.CarreraId))
         {
             return Forbid();
         }
@@ -154,12 +184,23 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
             return BadRequest(new { mensaje = error });
         }
 
-        Aplicar(request, docente);
-        SincronizarCarreras(docente, request.CarreraIds);
-
+        await using var transaction =
+            await dbContext.Database.BeginTransactionAsync(cancellationToken);
         try
         {
+            if (carreraPrincipalActual.CarreraId != request.CarreraPrincipalId)
+            {
+                carreraPrincipalActual.EsPrincipal = false;
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+
+            Aplicar(request, docente);
+            SincronizarCarreras(
+                docente,
+                request.CarreraIds,
+                request.CarreraPrincipalId);
             await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -196,7 +237,9 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
             return NotFound();
         }
 
-        if (!PuedeAdministrar(docente.Carreras.Select(x => x.CarreraId)))
+        var carreraPrincipal = docente.Carreras.SingleOrDefault(x => x.EsPrincipal);
+        if (carreraPrincipal is null
+            || !PuedeAdministrarPrincipal(carreraPrincipal.CarreraId))
         {
             return Forbid();
         }
@@ -236,14 +279,15 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
             return "Asigna al menos una carrera al docente.";
         }
 
-        if (request.CargaMaximaSemanal > request.HorasPermanenciaSemanal)
+        if (request.CarreraPrincipalId == Guid.Empty
+            || !carreraIds.Contains(request.CarreraPrincipalId))
         {
-            return "La carga máxima no puede superar las horas de permanencia.";
+            return "La carrera contratante debe formar parte de las carreras del docente.";
         }
 
-        if (!PuedeAdministrar(carreraIds))
+        if (!PuedeAdministrarPrincipal(request.CarreraPrincipalId))
         {
-            return "No puedes asignar carreras fuera de tu alcance.";
+            return "No puedes administrar docentes cuya carrera contratante está fuera de tu alcance.";
         }
 
         var activas = await dbContext.Carreras
@@ -268,7 +312,7 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
     private bool TieneAlcanceInstitucional() =>
         User.IsInRole(Roles.Administrador) || User.IsInRole(Roles.Subdireccion);
 
-    private bool PuedeAdministrar(IEnumerable<Guid> carreraIds)
+    private bool PuedeAdministrarPrincipal(Guid carreraId)
     {
         if (User.IsInRole(Roles.Administrador))
         {
@@ -276,8 +320,7 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
         }
 
         var permitidas = ObtenerCarrerasUsuario();
-        var solicitadas = carreraIds.Distinct().ToArray();
-        return solicitadas.Length > 0 && solicitadas.All(permitidas.Contains);
+        return permitidas.Contains(carreraId);
     }
 
     private HashSet<Guid> ObtenerCarrerasUsuario() =>
@@ -293,11 +336,16 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
         docente.Apellidos = request.Apellidos.Trim();
         docente.Correo = request.Correo.Trim().ToLowerInvariant();
         docente.Tipo = (TipoDocente)request.Tipo;
-        docente.HorasPermanenciaSemanal = checked((byte)request.HorasPermanenciaSemanal);
-        docente.CargaMaximaSemanal = checked((byte)request.CargaMaximaSemanal);
+        docente.HorasPermanenciaSemanal =
+            docente.Tipo == TipoDocente.TiempoCompleto ? (byte)40 : (byte)0;
+        docente.CargaMaximaSemanal =
+            docente.Tipo == TipoDocente.TiempoCompleto ? (byte)40 : (byte)0;
     }
 
-    private void SincronizarCarreras(Docente docente, IEnumerable<Guid> carreraIds)
+    private void SincronizarCarreras(
+        Docente docente,
+        IEnumerable<Guid> carreraIds,
+        Guid carreraPrincipalId)
     {
         var solicitadas = carreraIds.Distinct().ToHashSet();
         foreach (var relacion in docente.Carreras
@@ -310,7 +358,16 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
         var actuales = docente.Carreras.Select(x => x.CarreraId).ToHashSet();
         foreach (var carreraId in solicitadas.Where(x => !actuales.Contains(x)))
         {
-            docente.Carreras.Add(new DocenteCarrera { CarreraId = carreraId });
+            docente.Carreras.Add(new DocenteCarrera
+            {
+                CarreraId = carreraId,
+                EsPrincipal = carreraId == carreraPrincipalId
+            });
+        }
+
+        foreach (var relacion in docente.Carreras)
+        {
+            relacion.EsPrincipal = relacion.CarreraId == carreraPrincipalId;
         }
     }
 
@@ -336,16 +393,17 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
             docente.Tipo == TipoDocente.TiempoCompleto
                 ? "Tiempo completo"
                 : "Asignatura",
-            docente.HorasPermanenciaSemanal,
-            docente.CargaMaximaSemanal,
+            docente.Tipo == TipoDocente.TiempoCompleto ? 40 : null,
             docente.Activo,
             docente.Carreras
                 .Where(x => !x.Eliminado)
-                .OrderBy(x => x.Carrera.Nombre)
+                .OrderByDescending(x => x.EsPrincipal)
+                .ThenBy(x => x.Carrera.Nombre)
                 .Select(x => new DocenteCarreraDto(
                     x.CarreraId,
                     x.Carrera.Clave,
-                    x.Carrera.Nombre))
+                    x.Carrera.Nombre,
+                    x.EsPrincipal))
                 .ToArray(),
             Convert.ToBase64String(docente.RowVersion));
 

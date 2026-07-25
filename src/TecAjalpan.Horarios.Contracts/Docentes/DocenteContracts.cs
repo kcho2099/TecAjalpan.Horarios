@@ -5,7 +5,8 @@ namespace TecAjalpan.Horarios.Contracts.Docentes;
 public sealed record DocenteCarreraDto(
     Guid Id,
     string Clave,
-    string Nombre);
+    string Nombre,
+    bool EsPrincipal);
 
 public sealed record DocenteDto(
     Guid Id,
@@ -15,8 +16,7 @@ public sealed record DocenteDto(
     string Correo,
     byte Tipo,
     string TipoNombre,
-    int HorasPermanenciaSemanal,
-    int CargaMaximaSemanal,
+    int? HorasPermanenciaSemanal,
     bool Activo,
     IReadOnlyList<DocenteCarreraDto> Carreras,
     string RowVersion);
@@ -46,14 +46,11 @@ public sealed class GuardarDocenteRequest
     [Range(1, 2, ErrorMessage = "Selecciona un tipo de contratación válido.")]
     public int Tipo { get; set; } = 1;
 
-    [Range(1, 60, ErrorMessage = "Las horas de permanencia deben estar entre 1 y 60.")]
-    public int HorasPermanenciaSemanal { get; set; } = 40;
-
-    [Range(1, 60, ErrorMessage = "La carga máxima debe estar entre 1 y 60 horas.")]
-    public int CargaMaximaSemanal { get; set; } = 40;
-
     [MinLength(1, ErrorMessage = "Asigna al menos una carrera.")]
     public List<Guid> CarreraIds { get; set; } = [];
+
+    [Required(ErrorMessage = "Selecciona la carrera que contrató al docente.")]
+    public Guid CarreraPrincipalId { get; set; }
 
     public string? RowVersion { get; set; }
 }

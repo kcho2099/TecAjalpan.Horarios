@@ -9,7 +9,7 @@
   <div>
     <span class="eyebrow">Recursos académicos</span>
     <h1>Docentes</h1>
-    <p>Administra la plantilla docente, su contratación, carga y carreras asociadas.</p>
+    <p>Administra la plantilla docente, su carrera contratante y las carreras donde comparte clases.</p>
   </div>
   @if (puedeAdministrar)
   {
@@ -62,7 +62,7 @@
             <th>Docente</th>
             <th>Contratación</th>
             <th>Carreras</th>
-            <th>Carga máxima</th>
+            <th>Permanencia / carga</th>
             <th>Estado</th>
             @if (puedeAdministrar)
             {
@@ -84,11 +84,18 @@
                 <div class="tag-list">
                   @foreach (var carrera in docente.Carreras)
                   {
-                    <span class="data-tag" title="@carrera.Nombre">@carrera.Clave</span>
+                    <span class="data-tag @(carrera.EsPrincipal ? "primary-tag" : null)"
+                          title="@(carrera.EsPrincipal ? $"Contratante: {carrera.Nombre}" : carrera.Nombre)">
+                      @carrera.Clave@(carrera.EsPrincipal ? " · Principal" : string.Empty)
+                    </span>
                   }
                 </div>
               </td>
-              <td>@docente.CargaMaximaSemanal h/semana</td>
+              <td>
+                @(docente.Tipo == 1
+                  ? "40 h de permanencia"
+                  : "Según materias asignadas")
+              </td>
               <td>
                 <span class="status @(docente.Activo ? "status-active" : "status-closed")">
                   @(docente.Activo ? "Activo" : "Inactivo")
@@ -153,27 +160,25 @@
           </div>
           <div class="form-field">
             <label for="tipo-docente">Tipo de contratación</label>
-            <InputSelect id="tipo-docente" @bind-Value="modelo.Tipo"
-                         @bind-Value:after="AjustarTipo">
+            <InputSelect id="tipo-docente" @bind-Value="modelo.Tipo">
               <option value="1">Tiempo completo</option>
               <option value="2">Asignatura</option>
             </InputSelect>
             <ValidationMessage For="() => modelo.Tipo" />
           </div>
-          <div class="form-field">
-            <label for="horas-permanencia">Horas de permanencia semanales</label>
-            <InputNumber id="horas-permanencia"
-                         @bind-Value="modelo.HorasPermanenciaSemanal" />
-            <ValidationMessage For="() => modelo.HorasPermanenciaSemanal" />
-          </div>
-          <div class="form-field">
-            <label for="carga-maxima">Carga máxima semanal</label>
-            <InputNumber id="carga-maxima"
-                         @bind-Value="modelo.CargaMaximaSemanal" />
-            <ValidationMessage For="() => modelo.CargaMaximaSemanal" />
+          <div class="form-field full">
+            <div class="form-help">
+              @(modelo.Tipo == 1
+                ? "Tiempo completo: la permanencia institucional es fija de 40 horas semanales, 8 horas por día."
+                : "Asignatura: la carga efectiva se calculará con las materias asignadas; no se captura al darlo de alta.")
+            </div>
           </div>
           <fieldset class="career-selector full">
             <legend>Carreras del docente</legend>
+            <p class="form-help">
+              Marca la carrera que realizó la contratación como principal. Las demás serán secundarias,
+              aunque tengan más horas de clase.
+            </p>
             @if (carrerasDisponibles.Count == 0)
             {
               <div class="alerta-error">
@@ -193,11 +198,20 @@
                       <strong>@carrera.Clave</strong>
                       <small>@carrera.Nombre</small>
                     </span>
+                    <span class="principal-choice">
+                      <input type="radio"
+                             name="carrera-principal"
+                             disabled="@(!modelo.CarreraIds.Contains(carrera.Id))"
+                             checked="@(modelo.CarreraPrincipalId == carrera.Id)"
+                             @onchange="() => modelo.CarreraPrincipalId = carrera.Id" />
+                      Contratante
+                    </span>
                   </label>
                 }
               </div>
             }
             <ValidationMessage For="() => modelo.CarreraIds" />
+            <ValidationMessage For="() => modelo.CarreraPrincipalId" />
           </fieldset>
         </div>
 
@@ -326,22 +340,12 @@
       Apellidos = docente.Apellidos,
       Correo = docente.Correo,
       Tipo = docente.Tipo,
-      HorasPermanenciaSemanal = docente.HorasPermanenciaSemanal,
-      CargaMaximaSemanal = docente.CargaMaximaSemanal,
       CarreraIds = docente.Carreras.Select(x => x.Id).ToList(),
+      CarreraPrincipalId = docente.Carreras.Single(x => x.EsPrincipal).Id,
       RowVersion = docente.RowVersion
     };
     errorFormulario = null;
     mostrarFormulario = true;
-  }
-
-  private void AjustarTipo()
-  {
-    if (modelo.Tipo == 1)
-    {
-      modelo.HorasPermanenciaSemanal = 40;
-      modelo.CargaMaximaSemanal = 40;
-    }
   }
 
   private void CambiarCarrera(Guid carreraId, ChangeEventArgs args)
@@ -351,10 +355,18 @@
     if (seleccionada && !modelo.CarreraIds.Contains(carreraId))
     {
       modelo.CarreraIds.Add(carreraId);
+      if (modelo.CarreraPrincipalId == Guid.Empty)
+      {
+        modelo.CarreraPrincipalId = carreraId;
+      }
     }
     else if (!seleccionada)
     {
       modelo.CarreraIds.Remove(carreraId);
+      if (modelo.CarreraPrincipalId == carreraId)
+      {
+        modelo.CarreraPrincipalId = modelo.CarreraIds.FirstOrDefault();
+      }
     }
   }
 

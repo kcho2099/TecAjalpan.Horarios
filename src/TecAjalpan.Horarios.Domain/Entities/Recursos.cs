@@ -14,6 +14,7 @@ public sealed class Docente : EntidadAuditable
     public byte CargaMaximaSemanal { get; set; } = 40;
     public bool Activo { get; set; } = true;
     public ICollection<DocenteCarrera> Carreras { get; set; } = [];
+    public ICollection<DisponibilidadDocente> Disponibilidades { get; set; } = [];
 }
 
 public sealed class DocenteCarrera : EntidadAuditable
@@ -22,6 +23,7 @@ public sealed class DocenteCarrera : EntidadAuditable
     public Docente Docente { get; set; } = null!;
     public Guid CarreraId { get; set; }
     public Carrera Carrera { get; set; } = null!;
+    public bool EsPrincipal { get; set; }
 }
 
 public sealed class DisponibilidadDocente : EntidadAuditable
@@ -34,6 +36,16 @@ public sealed class DisponibilidadDocente : EntidadAuditable
     public DateTime? FechaValidacion { get; set; }
     public string? UsuarioValida { get; set; }
     public ICollection<DisponibilidadBloque> Bloques { get; set; } = [];
+    public ICollection<JornadaDocente> Jornadas { get; set; } = [];
+}
+
+public sealed class JornadaDocente : EntidadAuditable
+{
+    public Guid DisponibilidadDocenteId { get; set; }
+    public DisponibilidadDocente DisponibilidadDocente { get; set; } = null!;
+    public DiaAcademico Dia { get; set; }
+    public TimeOnly HoraInicio { get; set; }
+    public TimeOnly HoraFin { get; set; }
 }
 
 public sealed class DisponibilidadBloque : EntidadAuditable
