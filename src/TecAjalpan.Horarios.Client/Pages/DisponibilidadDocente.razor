@@ -255,7 +255,10 @@ else if (modelo is not null && DocenteSeleccionado is not null)
     try
     {
       modelo = await DocentesApi.ObtenerDisponibilidadAsync(docenteId, periodoId);
-      if (modelo is not null && modelo.TipoDocente == 1 && modelo.Jornadas.Count == 0)
+      if (modelo is not null
+          && modelo.Id is null
+          && modelo.TipoDocente == 1
+          && modelo.Jornadas.Count == 0)
       {
         modelo = modelo with
         {
@@ -396,7 +399,9 @@ else if (modelo is not null && DocenteSeleccionado is not null)
         return;
       }
       modelo = resultado.Disponibilidad;
-      mensaje = "Disponibilidad guardada. Jefatura debe validarla antes de generar horarios.";
+      mensaje = DocenteSeleccionado?.Tipo == 1
+        ? "Jornada guardada. Jefatura debe validarla antes de generar horarios."
+        : "Disponibilidad guardada. Jefatura debe validarla antes de generar horarios.";
     }
     catch (Exception ex)
     {
