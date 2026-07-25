@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -28,7 +29,7 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
 
         if (!TieneAlcanceInstitucional())
         {
-            var carreras = ObtenerCarrerasUsuario();
+            var carreras = await ObtenerCarrerasUsuarioAsync(cancellationToken);
             consulta = consulta.Where(x =>
                 x.Carreras.Any(c => c.EsPrincipal && carreras.Contains(c.CarreraId)));
         }
@@ -58,7 +59,7 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
 
         if (!TieneAlcanceInstitucional())
         {
-            var carreras = ObtenerCarrerasUsuario();
+            var carreras = await ObtenerCarrerasUsuarioAsync(cancellationToken);
             consulta = consulta.Where(x => carreras.Contains(x.Id));
         }
 
@@ -165,7 +166,9 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
 
         var carreraPrincipalActual = docente.Carreras.SingleOrDefault(x => x.EsPrincipal);
         if (carreraPrincipalActual is null
-            || !PuedeAdministrarPrincipal(carreraPrincipalActual.CarreraId))
+            || !await PuedeAdministrarPrincipalAsync(
+                carreraPrincipalActual.CarreraId,
+                cancellationToken))
         {
             return Forbid();
         }
@@ -239,7 +242,9 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
 
         var carreraPrincipal = docente.Carreras.SingleOrDefault(x => x.EsPrincipal);
         if (carreraPrincipal is null
-            || !PuedeAdministrarPrincipal(carreraPrincipal.CarreraId))
+            || !await PuedeAdministrarPrincipalAsync(
+                carreraPrincipal.CarreraId,
+                cancellationToken))
         {
             return Forbid();
         }
@@ -285,7 +290,9 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
             return "La carrera contratante debe formar parte de las carreras del docente.";
         }
 
-        if (!PuedeAdministrarPrincipal(request.CarreraPrincipalId))
+        if (!await PuedeAdministrarPrincipalAsync(
+                request.CarreraPrincipalId,
+                cancellationToken))
         {
             return "No puedes administrar docentes cuya carrera contratante está fuera de tu alcance.";
         }
@@ -312,22 +319,40 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
     private bool TieneAlcanceInstitucional() =>
         User.IsInRole(Roles.Administrador) || User.IsInRole(Roles.Subdireccion);
 
-    private bool PuedeAdministrarPrincipal(Guid carreraId)
+    private async Task<bool> PuedeAdministrarPrincipalAsync(
+        Guid carreraId,
+        CancellationToken cancellationToken)
     {
         if (User.IsInRole(Roles.Administrador))
         {
             return true;
         }
 
-        var permitidas = ObtenerCarrerasUsuario();
-        return permitidas.Contains(carreraId);
+        var usuarioId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return usuarioId is not null
+            && await dbContext.UsuariosCarreras
+                .AsNoTracking()
+                .AnyAsync(
+                    x => x.UsuarioId == usuarioId && x.CarreraId == carreraId,
+                    cancellationToken);
     }
 
-    private HashSet<Guid> ObtenerCarrerasUsuario() =>
-        User.FindAll("carrera")
-            .Select(x => Guid.TryParse(x.Value, out var id) ? id : Guid.Empty)
-            .Where(x => x != Guid.Empty)
-            .ToHashSet();
+    private async Task<HashSet<Guid>> ObtenerCarrerasUsuarioAsync(
+        CancellationToken cancellationToken)
+    {
+        var usuarioId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (usuarioId is null)
+        {
+            return [];
+        }
+
+        var carreras = await dbContext.UsuariosCarreras
+            .AsNoTracking()
+            .Where(x => x.UsuarioId == usuarioId)
+            .Select(x => x.CarreraId)
+            .ToArrayAsync(cancellationToken);
+        return carreras.ToHashSet();
+    }
 
     private static void Aplicar(GuardarDocenteRequest request, Docente docente)
     {
