@@ -4,7 +4,7 @@ using TecAjalpan.Horarios.Infrastructure.Persistence;
 
 namespace TecAjalpan.Horarios.Web.Services;
 
-public sealed class CierreAutomaticoPeriodosService(
+public sealed partial class CierreAutomaticoPeriodosService(
     IServiceScopeFactory scopeFactory,
     ILogger<CierreAutomaticoPeriodosService> logger) : BackgroundService
 {
@@ -44,18 +44,30 @@ public sealed class CierreAutomaticoPeriodosService(
             }
 
             await dbContext.SaveChangesAsync(cancellationToken);
-            logger.LogInformation(
-                "Se cerraron automáticamente {Cantidad} periodos vencidos.",
-                vencidos.Length);
+            LogPeriodosVencidosCerrados(logger, vencidos.Length);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
         }
         catch (Exception ex)
         {
-            logger.LogError(
-                ex,
-                "No fue posible cerrar automáticamente los periodos vencidos.");
+            LogErrorCierrePeriodos(logger, ex);
         }
     }
+
+    [LoggerMessage(
+        EventId = 1001,
+        Level = LogLevel.Information,
+        Message = "Se cerraron automáticamente {Cantidad} periodos vencidos.")]
+    private static partial void LogPeriodosVencidosCerrados(
+        ILogger<CierreAutomaticoPeriodosService> logger,
+        int cantidad);
+
+    [LoggerMessage(
+        EventId = 1002,
+        Level = LogLevel.Error,
+        Message = "No fue posible cerrar automáticamente los periodos vencidos.")]
+    private static partial void LogErrorCierrePeriodos(
+        ILogger<CierreAutomaticoPeriodosService> logger,
+        Exception exception);
 }
