@@ -49,7 +49,7 @@ public sealed class GuardarDocenteRequest
     [MinLength(1, ErrorMessage = "Asigna al menos una carrera.")]
     public List<Guid> CarreraIds { get; set; } = [];
 
-    [Required(ErrorMessage = "Selecciona la carrera que contrató al docente.")]
+    [Required(ErrorMessage = "Selecciona la carrera a la que está adscrito el docente.")]
     public Guid CarreraPrincipalId { get; set; }
 
     public string? RowVersion { get; set; }
