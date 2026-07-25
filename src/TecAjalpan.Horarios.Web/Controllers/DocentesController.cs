@@ -81,9 +81,26 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
     public async Task<ActionResult<IReadOnlyList<PeriodoDto>>> ListarPeriodosDisponibles(
         CancellationToken cancellationToken)
     {
+        var hoy = DateOnly.FromDateTime(DateTime.Today);
+        var vencidos = await dbContext.Periodos
+            .Where(x => !x.Eliminado
+                && x.Estado == EstadoPeriodo.Activo
+                && x.FechaFin < hoy)
+            .ToArrayAsync(cancellationToken);
+        if (vencidos.Length > 0)
+        {
+            foreach (var vencido in vencidos)
+            {
+                vencido.Estado = EstadoPeriodo.Cerrado;
+            }
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
         var periodos = await dbContext.Periodos
             .AsNoTracking()
-            .Where(x => x.Estado != EstadoPeriodo.Cerrado)
+            .Where(x => !x.Eliminado
+                && x.Estado == EstadoPeriodo.Activo
+                && x.FechaFin >= hoy)
             .OrderByDescending(x => x.FechaInicio)
             .ToArrayAsync(cancellationToken);
         return Ok(periodos.Select(x => new PeriodoDto(
