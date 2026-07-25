@@ -201,7 +201,12 @@ public sealed class ApplicationDbContext(
         modelBuilder.Entity<JornadaDocente>(entity =>
         {
             entity.ToTable("JornadasDocentes", "Recursos");
-            entity.HasIndex(x => new { x.DisponibilidadDocenteId, x.Dia })
+            entity.HasIndex(x => new
+                {
+                    x.DisponibilidadDocenteId,
+                    x.Dia,
+                    x.EsSemanaSabatina
+                })
                 .IsUnique()
                 .HasFilter("[Eliminado] = 0");
             entity.HasOne(x => x.DisponibilidadDocente)

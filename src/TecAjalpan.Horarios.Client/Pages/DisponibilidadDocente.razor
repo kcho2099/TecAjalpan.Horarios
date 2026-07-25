@@ -72,25 +72,62 @@ else if (modelo is not null && DocenteSeleccionado is not null)
     {
       <h3>Jornada de permanencia</h3>
       <p class="form-help">
-        Debe sumar 40 horas semanales, sin superar 8 horas por día. Si imparte un módulo
-        sabatino, agrega el sábado de 08:00–12:00 o de 12:00–16:00 y distribuye las
-        36 horas restantes de lunes a viernes.
+        La jornada ordinaria debe sumar 40 horas de lunes a viernes, sin superar 8 horas
+        por día. Si imparte un módulo sabatino, también se registra el perfil que aplicará
+        únicamente durante sus 5 o 6 semanas.
       </p>
+      <h4>Semana ordinaria</h4>
+      <div class="workday-grid">
+        @foreach (var dia in DiasLaborales)
+        {
+          var jornada = ObtenerJornada(dia.Id, esSemanaSabatina: false);
+          var horasDia = CalcularHoras(jornada);
+          <div class="workday-row">
+            <strong>@dia.Nombre</strong>
+            <label>
+              Entrada
+              <input type="time" min="07:00" max="17:00"
+                     value="@jornada.HoraInicio.ToString("HH:mm", CultureInfo.InvariantCulture)"
+                     @onchange="e => CambiarHora(dia.Id, false, true, e.Value?.ToString())" />
+            </label>
+            <label>
+              Salida
+              <input type="time" min="08:00" max="18:00"
+                     value="@jornada.HoraFin.ToString("HH:mm", CultureInfo.InvariantCulture)"
+                     @onchange="e => CambiarHora(dia.Id, false, false, e.Value?.ToString())" />
+            </label>
+            <span>@FormatearHoras(horasDia)</span>
+          </div>
+        }
+      </div>
+      <div class="workweek-total @(TotalHorasJornada(false) == 40 ? "is-valid" : "is-invalid")">
+        <span>Total de semana ordinaria</span>
+        <strong>@FormatearHoras(TotalHorasJornada(false)) / 40 horas</strong>
+      </div>
+
       <label class="saturday-workday-toggle">
         <input type="checkbox"
-               checked="@TieneJornadaSabatina"
-               @onchange="AlternarJornadaSabatina" />
+               checked="@TienePerfilSabatino"
+               @onchange="AlternarPerfilSabatino" />
         <span>
-          <strong>Incluir jornada sabatina</strong>
+          <strong>El docente impartirá un módulo sabatino</strong>
           <small>
-            Se aplicará sólo durante las 5 o 6 semanas del módulo sabatino asignado.
+            Habilita una segunda jornada que sólo se aplicará en las fechas del módulo asignado.
           </small>
         </span>
       </label>
-      <div class="workday-grid">
-        @foreach (var dia in DiasJornada)
+
+      @if (TienePerfilSabatino)
+      {
+        <h4>Semana durante el módulo sabatino</h4>
+        <p class="form-help">
+          Debe sumar 40 horas: 36 de lunes a viernes y un turno sabatino de 4 horas,
+          de 08:00–12:00 o de 12:00–16:00.
+        </p>
+        <div class="workday-grid">
+        @foreach (var dia in Dias)
         {
-          var jornada = ObtenerJornada(dia.Id);
+          var jornada = ObtenerJornada(dia.Id, esSemanaSabatina: true);
           var horasDia = CalcularHoras(jornada);
           <div class="workday-row">
             <strong>@dia.Nombre</strong>
@@ -100,7 +137,7 @@ else if (modelo is not null && DocenteSeleccionado is not null)
                      min="@(dia.Id == 6 ? "08:00" : "07:00")"
                      max="@(dia.Id == 6 ? "12:00" : "17:00")"
                      value="@jornada.HoraInicio.ToString("HH:mm", CultureInfo.InvariantCulture)"
-                     @onchange="e => CambiarHora(dia.Id, true, e.Value?.ToString())" />
+                     @onchange="e => CambiarHora(dia.Id, true, true, e.Value?.ToString())" />
             </label>
             <label>
               Salida
@@ -108,16 +145,17 @@ else if (modelo is not null && DocenteSeleccionado is not null)
                      min="@(dia.Id == 6 ? "12:00" : "08:00")"
                      max="@(dia.Id == 6 ? "16:00" : "18:00")"
                      value="@jornada.HoraFin.ToString("HH:mm", CultureInfo.InvariantCulture)"
-                     @onchange="e => CambiarHora(dia.Id, false, e.Value?.ToString())" />
+                     @onchange="e => CambiarHora(dia.Id, true, false, e.Value?.ToString())" />
             </label>
             <span>@FormatearHoras(horasDia)</span>
           </div>
         }
-      </div>
-      <div class="workweek-total @(TotalHorasJornada == 40 ? "is-valid" : "is-invalid")">
-        <span>Total semanal</span>
-        <strong>@FormatearHoras(TotalHorasJornada) / 40 horas</strong>
-      </div>
+        </div>
+        <div class="workweek-total @(TotalHorasJornada(true) == 40 ? "is-valid" : "is-invalid")">
+          <span>Total durante el módulo</span>
+          <strong>@FormatearHoras(TotalHorasJornada(true)) / 40 horas</strong>
+        </div>
+      }
     }
 
     @if (DocenteSeleccionado.Tipo == 2)
@@ -214,12 +252,12 @@ else if (modelo is not null && DocenteSeleccionado is not null)
   private string? error;
 
   private IEnumerable<(byte Id, string Nombre)> DiasLaborales => Dias.Take(5);
-  private IEnumerable<(byte Id, string Nombre)> DiasJornada =>
-    TieneJornadaSabatina ? Dias : DiasLaborales;
-  private bool TieneJornadaSabatina =>
-    modelo?.Jornadas.Any(x => x.Dia == 6) == true;
-  private double TotalHorasJornada =>
-    modelo?.Jornadas.Sum(CalcularHoras) ?? 0;
+  private bool TienePerfilSabatino =>
+    modelo?.Jornadas.Any(x => x.EsSemanaSabatina) == true;
+  private double TotalHorasJornada(bool esSemanaSabatina) =>
+    modelo?.Jornadas
+      .Where(x => x.EsSemanaSabatina == esSemanaSabatina)
+      .Sum(CalcularHoras) ?? 0;
   private DocenteDto? DocenteSeleccionado => docentes.SingleOrDefault(x => x.Id == docenteId);
   private string CarreraPrincipal =>
     DocenteSeleccionado?.Carreras.SingleOrDefault(x => x.EsPrincipal)?.Nombre
@@ -267,7 +305,7 @@ else if (modelo is not null && DocenteSeleccionado is not null)
         modelo = modelo with
         {
           Jornadas = DiasLaborales
-            .Select(x => new JornadaDocenteDto(x.Id, new TimeOnly(8, 0), new TimeOnly(16, 0)))
+            .Select(x => JornadaPredeterminada(x.Id, esSemanaSabatina: false))
             .ToArray()
         };
       }
@@ -282,11 +320,16 @@ else if (modelo is not null && DocenteSeleccionado is not null)
     }
   }
 
-  private JornadaDocenteDto ObtenerJornada(byte dia) =>
-    modelo?.Jornadas.SingleOrDefault(x => x.Dia == dia)
-    ?? JornadaPredeterminada(dia);
+  private JornadaDocenteDto ObtenerJornada(byte dia, bool esSemanaSabatina) =>
+    modelo?.Jornadas.SingleOrDefault(
+      x => x.Dia == dia && x.EsSemanaSabatina == esSemanaSabatina)
+    ?? JornadaPredeterminada(dia, esSemanaSabatina);
 
-  private void CambiarHora(byte dia, bool inicio, string? valor)
+  private void CambiarHora(
+    byte dia,
+    bool esSemanaSabatina,
+    bool inicio,
+    string? valor)
   {
     if (modelo is null
         || !TimeOnly.TryParse(
@@ -298,10 +341,11 @@ else if (modelo is not null && DocenteSeleccionado is not null)
       return;
     }
     var jornadas = modelo.Jornadas.ToList();
-    var indice = jornadas.FindIndex(x => x.Dia == dia);
+    var indice = jornadas.FindIndex(
+      x => x.Dia == dia && x.EsSemanaSabatina == esSemanaSabatina);
     var actual = indice >= 0
       ? jornadas[indice]
-      : JornadaPredeterminada(dia);
+      : JornadaPredeterminada(dia, esSemanaSabatina);
     var nueva = inicio
       ? actual with { HoraInicio = hora }
       : actual with { HoraFin = hora };
@@ -316,7 +360,7 @@ else if (modelo is not null && DocenteSeleccionado is not null)
     modelo = modelo with { Jornadas = jornadas, Validada = false };
   }
 
-  private void AlternarJornadaSabatina(ChangeEventArgs args)
+  private void AlternarPerfilSabatino(ChangeEventArgs args)
   {
     if (modelo is null)
     {
@@ -325,19 +369,43 @@ else if (modelo is not null && DocenteSeleccionado is not null)
 
     var incluir = args.Value is true
       || bool.TryParse(args.Value?.ToString(), out var valor) && valor;
-    var jornadas = modelo.Jornadas.Where(x => x.Dia != 6).ToList();
+    var jornadas = modelo.Jornadas
+      .Where(x => !x.EsSemanaSabatina)
+      .ToList();
     if (incluir)
     {
-      jornadas.Add(JornadaPredeterminada(6));
+      foreach (var dia in DiasLaborales)
+      {
+        var ordinaria = ObtenerJornada(dia.Id, esSemanaSabatina: false);
+        var fin = dia.Id == 5
+          ? ordinaria.HoraInicio.AddHours(4)
+          : ordinaria.HoraFin;
+        jornadas.Add(new JornadaDocenteDto(
+          dia.Id,
+          ordinaria.HoraInicio,
+          fin,
+          EsSemanaSabatina: true));
+      }
+      jornadas.Add(JornadaPredeterminada(6, esSemanaSabatina: true));
     }
 
     modelo = modelo with { Jornadas = jornadas, Validada = false };
   }
 
-  private static JornadaDocenteDto JornadaPredeterminada(byte dia) =>
+  private static JornadaDocenteDto JornadaPredeterminada(
+    byte dia,
+    bool esSemanaSabatina) =>
     dia == 6
-      ? new JornadaDocenteDto(dia, new TimeOnly(8, 0), new TimeOnly(12, 0))
-      : new JornadaDocenteDto(dia, new TimeOnly(8, 0), new TimeOnly(16, 0));
+      ? new JornadaDocenteDto(
+          dia,
+          new TimeOnly(8, 0),
+          new TimeOnly(12, 0),
+          esSemanaSabatina)
+      : new JornadaDocenteDto(
+          dia,
+          new TimeOnly(8, 0),
+          new TimeOnly(16, 0),
+          esSemanaSabatina);
 
   private static double CalcularHoras(JornadaDocenteDto jornada) =>
     Math.Max(0, (jornada.HoraFin - jornada.HoraInicio).TotalHours);

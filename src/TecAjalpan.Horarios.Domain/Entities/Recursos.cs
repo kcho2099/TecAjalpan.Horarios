@@ -46,6 +46,7 @@ public sealed class JornadaDocente : EntidadAuditable
     public DiaAcademico Dia { get; set; }
     public TimeOnly HoraInicio { get; set; }
     public TimeOnly HoraFin { get; set; }
+    public bool EsSemanaSabatina { get; set; }
 }
 
 public sealed class DisponibilidadBloque : EntidadAuditable

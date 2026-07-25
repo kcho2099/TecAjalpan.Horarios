@@ -840,6 +840,9 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                     b.Property<bool>("Eliminado")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("EsSemanaSabatina")
+                        .HasColumnType("bit");
+
                     b.Property<DateTime>("FechaCrea")
                         .HasColumnType("datetime2");
 
@@ -873,7 +876,7 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("DisponibilidadDocenteId", "Dia")
+                    b.HasIndex("DisponibilidadDocenteId", "Dia", "EsSemanaSabatina")
                         .IsUnique()
                         .HasFilter("[Eliminado] = 0");
 

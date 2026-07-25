@@ -244,13 +244,42 @@ public sealed class DisponibilidadesDocentesController(
             return "A los docentes de tiempo completo sólo se les registra el inicio y fin de su jornada.";
         }
 
-        var jornadas = request.Jornadas.ToArray();
-        var dias = jornadas.Select(x => x.Dia).ToArray();
-        if (dias.Distinct().Count() != dias.Length
-            || dias.Any(x => x is < 1 or > 6)
-            || Enumerable.Range(1, 5).Any(dia => !dias.Contains((byte)dia)))
+        var jornadasOrdinarias = request.Jornadas
+            .Where(x => !x.EsSemanaSabatina)
+            .ToArray();
+        var errorJornadaOrdinaria = ValidarPerfilJornada(
+            jornadasOrdinarias,
+            esSemanaSabatina: false);
+        if (errorJornadaOrdinaria is not null)
         {
-            return "Tiempo completo requiere jornada de lunes a viernes; el sábado es opcional cuando imparte un módulo sabatino.";
+            return errorJornadaOrdinaria;
+        }
+
+        var jornadasSabatinas = request.Jornadas
+            .Where(x => x.EsSemanaSabatina)
+            .ToArray();
+        return jornadasSabatinas.Length == 0
+            ? null
+            : ValidarPerfilJornada(
+                jornadasSabatinas,
+                esSemanaSabatina: true);
+    }
+
+    private static string? ValidarPerfilJornada(
+        IReadOnlyCollection<JornadaDocenteDto> jornadas,
+        bool esSemanaSabatina)
+    {
+        var diasEsperados = esSemanaSabatina
+            ? Enumerable.Range(1, 6).Select(x => (byte)x).ToArray()
+            : Enumerable.Range(1, 5).Select(x => (byte)x).ToArray();
+        var dias = jornadas.Select(x => x.Dia).ToArray();
+        if (dias.Length != diasEsperados.Length
+            || dias.Distinct().Count() != dias.Length
+            || !dias.OrderBy(x => x).SequenceEqual(diasEsperados))
+        {
+            return esSemanaSabatina
+                ? "La jornada de semanas sabatinas debe incluir de lunes a sábado."
+                : "La jornada ordinaria de tiempo completo debe incluir de lunes a viernes.";
         }
 
         var duraciones = jornadas
@@ -272,7 +301,8 @@ public sealed class DisponibilidadesDocentesController(
         }
 
         var jornadaSabatina = duraciones.SingleOrDefault(x => x.Dia == 6);
-        if (jornadaSabatina is not null
+        if (esSemanaSabatina
+            && jornadaSabatina is not null
             && (jornadaSabatina.Duracion != TimeSpan.FromHours(4)
                 || jornadaSabatina.HoraInicio != new TimeOnly(8, 0)
                     && jornadaSabatina.HoraInicio != new TimeOnly(12, 0)))
@@ -282,7 +312,9 @@ public sealed class DisponibilidadesDocentesController(
 
         if (duraciones.Sum(x => x.Duracion.TotalHours) != 40)
         {
-            return "La jornada de tiempo completo debe sumar exactamente 40 horas semanales, sin superar 8 horas por día.";
+            return esSemanaSabatina
+                ? "Durante el módulo sabatino, la jornada debe sumar exactamente 40 horas incluyendo el sábado."
+                : "La jornada ordinaria debe sumar exactamente 40 horas de lunes a viernes.";
         }
 
         return null;
@@ -292,10 +324,13 @@ public sealed class DisponibilidadesDocentesController(
         DisponibilidadDocente disponibilidad,
         IEnumerable<JornadaDocenteDto> solicitadas)
     {
-        var nuevas = solicitadas.ToDictionary(x => x.Dia);
+        var nuevas = solicitadas.ToDictionary(
+            x => (x.Dia, x.EsSemanaSabatina));
         foreach (var actual in disponibilidad.Jornadas.ToArray())
         {
-            if (!nuevas.Remove((byte)actual.Dia, out var solicitada))
+            if (!nuevas.Remove(
+                    ((byte)actual.Dia, actual.EsSemanaSabatina),
+                    out var solicitada))
             {
                 dbContext.JornadasDocentes.Remove(actual);
                 continue;
@@ -309,7 +344,8 @@ public sealed class DisponibilidadesDocentesController(
             {
                 Dia = (DiaAcademico)x.Dia,
                 HoraInicio = x.HoraInicio,
-                HoraFin = x.HoraFin
+                HoraFin = x.HoraFin,
+                EsSemanaSabatina = x.EsSemanaSabatina
             }))
         {
             disponibilidad.Jornadas.Add(nueva);
@@ -357,11 +393,13 @@ public sealed class DisponibilidadesDocentesController(
             disponibilidad?.Validada ?? false,
             disponibilidad?.FechaValidacion,
             disponibilidad?.Jornadas
-                .OrderBy(x => x.Dia)
+                .OrderBy(x => x.EsSemanaSabatina)
+                .ThenBy(x => x.Dia)
                 .Select(x => new JornadaDocenteDto(
                     (byte)x.Dia,
                     x.HoraInicio,
-                    x.HoraFin))
+                    x.HoraFin,
+                    x.EsSemanaSabatina))
                 .ToArray() ?? [],
             disponibilidad?.Bloques
                 .Where(x => x.Disponible)

@@ -5,7 +5,8 @@ namespace TecAjalpan.Horarios.Contracts.Docentes;
 public sealed record JornadaDocenteDto(
     byte Dia,
     TimeOnly HoraInicio,
-    TimeOnly HoraFin);
+    TimeOnly HoraFin,
+    bool EsSemanaSabatina = false);
 
 public sealed record DisponibilidadBloqueDto(
     byte Dia,
