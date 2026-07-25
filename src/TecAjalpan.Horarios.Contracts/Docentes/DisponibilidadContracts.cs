@@ -30,7 +30,6 @@ public sealed class GuardarDisponibilidadDocenteRequest
 
     public List<JornadaDocenteDto> Jornadas { get; set; } = [];
 
-    [MinLength(1, ErrorMessage = "Selecciona al menos un bloque disponible.")]
     public List<DisponibilidadBloqueDto> Bloques { get; set; } = [];
 
     public string? RowVersion { get; set; }
