@@ -33,6 +33,10 @@
           <option value="@periodo.Id">@periodo.Nombre</option>
         }
       </select>
+      @if (periodos.Count == 0)
+      {
+        <small>No hay un periodo activo disponible para captura.</small>
+      }
     </div>
     <div class="form-field">
       <label for="docente">Docente</label>
