@@ -245,18 +245,44 @@ public sealed class DisponibilidadesDocentesController(
         }
 
         var jornadas = request.Jornadas.ToArray();
-        if (jornadas.Length != 5
-            || jornadas.Select(x => x.Dia).Distinct().Count() != 5
-            || jornadas.Any(x => x.Dia is < 1 or > 5))
+        var dias = jornadas.Select(x => x.Dia).ToArray();
+        if (dias.Distinct().Count() != dias.Length
+            || dias.Any(x => x is < 1 or > 6)
+            || Enumerable.Range(1, 5).Any(dia => !dias.Contains((byte)dia)))
         {
-            return "Tiempo completo requiere una jornada de lunes a viernes.";
+            return "Tiempo completo requiere jornada de lunes a viernes; el sábado es opcional cuando imparte un módulo sabatino.";
         }
-        if (jornadas.Any(x =>
+
+        var duraciones = jornadas
+            .Select(x => new
+            {
+                x.Dia,
+                x.HoraInicio,
+                x.HoraFin,
+                Duracion = x.HoraFin - x.HoraInicio
+            })
+            .ToArray();
+        if (duraciones.Any(x =>
                 x.HoraInicio < new TimeOnly(7, 0)
                 || x.HoraFin > new TimeOnly(18, 0)
-                || x.HoraFin - x.HoraInicio != TimeSpan.FromHours(8)))
+                || x.Duracion <= TimeSpan.Zero
+                || x.Duracion > TimeSpan.FromHours(8)))
         {
-            return "Cada jornada debe cubrir exactamente 8 horas entre 07:00 y 18:00.";
+            return "Cada jornada debe ser mayor a cero, no superar 8 horas y estar entre 07:00 y 18:00.";
+        }
+
+        var jornadaSabatina = duraciones.SingleOrDefault(x => x.Dia == 6);
+        if (jornadaSabatina is not null
+            && (jornadaSabatina.Duracion != TimeSpan.FromHours(4)
+                || jornadaSabatina.HoraInicio != new TimeOnly(8, 0)
+                    && jornadaSabatina.HoraInicio != new TimeOnly(12, 0)))
+        {
+            return "La jornada sabatina debe ser un módulo de 4 horas: 08:00–12:00 o 12:00–16:00.";
+        }
+
+        if (duraciones.Sum(x => x.Duracion.TotalHours) != 40)
+        {
+            return "La jornada de tiempo completo debe sumar exactamente 40 horas semanales, sin superar 8 horas por día.";
         }
 
         return null;

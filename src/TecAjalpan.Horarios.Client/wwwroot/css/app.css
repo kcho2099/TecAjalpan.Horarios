@@ -82,6 +82,36 @@ a {
   gap: 9px;
 }
 
+.saturday-workday-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 16px 0;
+  padding: 13px 16px;
+  border: 1px solid var(--borde);
+  border-radius: 12px;
+  background: #faf8f7;
+  cursor: pointer;
+}
+
+.saturday-workday-toggle input {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  accent-color: var(--vino);
+}
+
+.saturday-workday-toggle span {
+  display: grid;
+  gap: 2px;
+}
+
+.saturday-workday-toggle small {
+  color: var(--gris);
+}
+
 .workday-row {
   display: grid;
   grid-template-columns: 120px repeat(2, minmax(150px, 220px)) 80px;
@@ -103,6 +133,28 @@ a {
   border: 1px solid var(--borde);
   border-radius: 7px;
   padding: 8px;
+}
+
+.workweek-total {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  padding: 13px 16px;
+  border: 1px solid;
+  border-radius: 12px;
+}
+
+.workweek-total.is-valid {
+  color: #166534;
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.workweek-total.is-invalid {
+  color: #991b1b;
+  border-color: #fecaca;
+  background: #fef2f2;
 }
 
 .availability-table-wrap {
