@@ -215,23 +215,32 @@ public sealed class DisponibilidadesDocentesController(
         TipoDocente tipo,
         GuardarDisponibilidadDocenteRequest request)
     {
-        var bloques = request.Bloques
-            .Select(x => (x.Dia, x.Bloque))
-            .ToArray();
-        if (bloques.Length == 0 || bloques.Distinct().Count() != bloques.Length)
-        {
-            return "La disponibilidad debe contener bloques únicos.";
-        }
-        if (bloques.Any(x => x.Dia is < 1 or > 6 || x.Bloque is < 1 or > 8))
-        {
-            return "Las clases sólo pueden registrarse en bloques de 08:00 a 16:00.";
-        }
-
         if (tipo == TipoDocente.Asignatura)
         {
+            var bloques = request.Bloques
+                .Select(x => (x.Dia, x.Bloque))
+                .ToArray();
+            if (bloques.Length == 0)
+            {
+                return "Selecciona al menos un bloque disponible.";
+            }
+            if (bloques.Distinct().Count() != bloques.Length)
+            {
+                return "La disponibilidad debe contener bloques únicos.";
+            }
+            if (bloques.Any(x => x.Dia is < 1 or > 6 || x.Bloque is < 1 or > 8))
+            {
+                return "Las clases sólo pueden registrarse en bloques de 08:00 a 16:00.";
+            }
+
             return request.Jornadas.Count == 0
                 ? null
                 : "Los docentes de asignatura sólo registran ventanas disponibles para clase.";
+        }
+
+        if (request.Bloques.Count != 0)
+        {
+            return "A los docentes de tiempo completo sólo se les registra el inicio y fin de su jornada.";
         }
 
         var jornadas = request.Jornadas.ToArray();
@@ -247,18 +256,6 @@ public sealed class DisponibilidadesDocentesController(
                 || x.HoraFin - x.HoraInicio != TimeSpan.FromHours(8)))
         {
             return "Cada jornada debe cubrir exactamente 8 horas entre 07:00 y 18:00.";
-        }
-
-        foreach (var bloque in request.Bloques)
-        {
-            var jornada = jornadas.SingleOrDefault(x => x.Dia == bloque.Dia);
-            var inicioBloque = new TimeOnly(8 + bloque.Bloque - 1, 0);
-            if (jornada is null
-                || inicioBloque < jornada.HoraInicio
-                || inicioBloque.AddHours(1) > jornada.HoraFin)
-            {
-                return "Todos los bloques para clase deben quedar dentro de la jornada diaria.";
-            }
         }
 
         return null;
