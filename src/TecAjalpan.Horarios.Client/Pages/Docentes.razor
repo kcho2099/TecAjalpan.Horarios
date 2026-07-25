@@ -9,7 +9,7 @@
   <div>
     <span class="eyebrow">Recursos académicos</span>
     <h1>Docentes</h1>
-    <p>Administra la plantilla docente, su carrera contratante y las carreras donde comparte clases.</p>
+    <p>Administra la plantilla docente, su carrera de adscripción y las carreras donde comparte clases.</p>
   </div>
   @if (puedeAdministrar)
   {
@@ -85,8 +85,8 @@
                   @foreach (var carrera in docente.Carreras)
                   {
                     <span class="data-tag @(carrera.EsPrincipal ? "primary-tag" : null)"
-                          title="@(carrera.EsPrincipal ? $"Contratante: {carrera.Nombre}" : carrera.Nombre)">
-                      @carrera.Clave@(carrera.EsPrincipal ? " · Principal" : string.Empty)
+                          title="@(carrera.EsPrincipal ? $"Adscrito: {carrera.Nombre}" : carrera.Nombre)">
+                      @carrera.Clave@(carrera.EsPrincipal ? " · Adscrito" : string.Empty)
                     </span>
                   }
                 </div>
@@ -180,8 +180,8 @@
           <fieldset class="career-selector full">
             <legend>Carreras del docente</legend>
             <p class="form-help">
-              Marca la carrera que realizó la contratación como principal. Las demás serán secundarias,
-              aunque tengan más horas de clase.
+              Selecciona las carreras donde puede impartir clases y activa “Adscrito” en la carrera
+              a la que pertenece. Las demás serán secundarias, aunque tengan más horas de clase.
             </p>
             @if (carrerasDisponibles.Count == 0)
             {
@@ -195,23 +195,29 @@
               <div class="career-grid">
                 @foreach (var carrera in carrerasDisponibles)
                 {
-                  <label class="check-field">
-                    <input type="checkbox"
+                  <div class="check-field career-card">
+                    <input id="@($"carrera-{carrera.Id}")"
+                           class="career-checkbox"
+                           type="checkbox"
                            checked="@modelo.CarreraIds.Contains(carrera.Id)"
                            @onchange="e => CambiarCarrera(carrera.Id, e)" />
-                    <span>
+                    <label class="career-copy" for="@($"carrera-{carrera.Id}")">
                       <strong>@carrera.Clave</strong>
                       <small>@carrera.Nombre</small>
-                    </span>
-                    <span class="principal-choice">
-                      <input type="radio"
-                             name="carrera-principal"
-                             disabled="@(!modelo.CarreraIds.Contains(carrera.Id))"
-                             checked="@(modelo.CarreraPrincipalId == carrera.Id)"
-                             @onchange="() => modelo.CarreraPrincipalId = carrera.Id" />
-                      Contratante
-                    </span>
-                  </label>
+                    </label>
+                    <button type="button"
+                            class="adscription-switch @(modelo.CarreraPrincipalId == carrera.Id ? "is-active" : null)"
+                            role="switch"
+                            aria-checked="@(modelo.CarreraPrincipalId == carrera.Id)"
+                            title="Marcar como carrera de adscripción"
+                            disabled="@(!modelo.CarreraIds.Contains(carrera.Id))"
+                            @onclick="() => modelo.CarreraPrincipalId = carrera.Id">
+                      <span class="switch-track" aria-hidden="true">
+                        <span class="switch-thumb"></span>
+                      </span>
+                      <span>Adscrito</span>
+                    </button>
+                  </div>
                 }
               </div>
             }
