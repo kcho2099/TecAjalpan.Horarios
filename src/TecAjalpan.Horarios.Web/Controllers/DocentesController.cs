@@ -287,14 +287,14 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
         if (request.CarreraPrincipalId == Guid.Empty
             || !carreraIds.Contains(request.CarreraPrincipalId))
         {
-            return "La carrera contratante debe formar parte de las carreras del docente.";
+            return "La carrera de adscripción debe formar parte de las carreras del docente.";
         }
 
         if (!await PuedeAdministrarPrincipalAsync(
                 request.CarreraPrincipalId,
                 cancellationToken))
         {
-            return "No puedes administrar docentes cuya carrera contratante está fuera de tu alcance.";
+            return "No puedes administrar docentes cuya carrera de adscripción está fuera de tu alcance.";
         }
 
         var activas = await dbContext.Carreras
