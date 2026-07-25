@@ -145,7 +145,7 @@
             <label for="estado">Estado</label>
             <InputSelect id="estado" @bind-Value="modelo.Estado">
               <option value="1">Configuración</option>
-              <option value="2">Activo</option>
+              <option value="2" disabled="@HayOtroPeriodoActivo">Activo</option>
               <option value="3">Cerrado</option>
             </InputSelect>
           </div>
@@ -196,6 +196,10 @@
       paginaActual = 1;
     }
   }
+
+  private bool HayOtroPeriodoActivo =>
+    periodos.Any(x => x.Estado == 2
+      && (!periodoId.HasValue || x.Id != periodoId.Value));
 
   private IEnumerable<PeriodoDto> PeriodosPaginados =>
     PeriodosFiltrados
