@@ -244,48 +244,28 @@ public sealed class DisponibilidadesDocentesController(
             return "A los docentes de tiempo completo sólo se les registra el inicio y fin de su jornada.";
         }
 
-        var jornadasOrdinarias = request.Jornadas
-            .Where(x => !x.EsSemanaSabatina)
-            .ToArray();
-        var errorJornadaOrdinaria = ValidarPerfilJornada(
-            jornadasOrdinarias,
-            esSemanaSabatina: false);
-        if (errorJornadaOrdinaria is not null)
+        if (request.Jornadas.Any(x => x.EsSemanaSabatina))
         {
-            return errorJornadaOrdinaria;
+            return "La jornada debe registrarse como una sola distribución semanal de lunes a sábado.";
         }
 
-        var jornadasSabatinas = request.Jornadas
-            .Where(x => x.EsSemanaSabatina)
-            .ToArray();
-        return jornadasSabatinas.Length == 0
-            ? null
-            : ValidarPerfilJornada(
-                jornadasSabatinas,
-                esSemanaSabatina: true);
+        return ValidarPerfilJornada(request.Jornadas);
     }
 
     private static string? ValidarPerfilJornada(
-        IReadOnlyCollection<JornadaDocenteDto> jornadas,
-        bool esSemanaSabatina)
+        IReadOnlyCollection<JornadaDocenteDto> jornadas)
     {
-        var diasEsperados = esSemanaSabatina
-            ? Enumerable.Range(1, 6).Select(x => (byte)x).ToArray()
-            : Enumerable.Range(1, 5).Select(x => (byte)x).ToArray();
         var dias = jornadas.Select(x => x.Dia).ToArray();
-        if (dias.Length != diasEsperados.Length
+        if (dias.Length == 0
             || dias.Distinct().Count() != dias.Length
-            || !dias.OrderBy(x => x).SequenceEqual(diasEsperados))
+            || dias.Any(x => x is < 1 or > 6))
         {
-            return esSemanaSabatina
-                ? "La jornada de semanas sabatinas debe incluir de lunes a sábado."
-                : "La jornada ordinaria de tiempo completo debe incluir de lunes a viernes.";
+            return "La jornada semanal debe incluir días únicos entre lunes y sábado.";
         }
 
         var duraciones = jornadas
             .Select(x => new
             {
-                x.Dia,
                 x.HoraInicio,
                 x.HoraFin,
                 Duracion = x.HoraFin - x.HoraInicio
@@ -297,24 +277,12 @@ public sealed class DisponibilidadesDocentesController(
                 || x.Duracion <= TimeSpan.Zero
                 || x.Duracion > TimeSpan.FromHours(8)))
         {
-            return "Cada jornada debe ser mayor a cero, no superar 8 horas y estar entre 07:00 y 18:00.";
-        }
-
-        var jornadaSabatina = duraciones.SingleOrDefault(x => x.Dia == 6);
-        if (esSemanaSabatina
-            && jornadaSabatina is not null
-            && (jornadaSabatina.Duracion != TimeSpan.FromHours(4)
-                || jornadaSabatina.HoraInicio != new TimeOnly(8, 0)
-                    && jornadaSabatina.HoraInicio != new TimeOnly(12, 0)))
-        {
-            return "La jornada sabatina debe ser un módulo de 4 horas: 08:00–12:00 o 12:00–16:00.";
+            return "Cada día seleccionado debe tener más de 0 y hasta 8 horas, dentro del horario de 07:00 a 18:00.";
         }
 
         if (duraciones.Sum(x => x.Duracion.TotalHours) != 40)
         {
-            return esSemanaSabatina
-                ? "Durante el módulo sabatino, la jornada debe sumar exactamente 40 horas incluyendo el sábado."
-                : "La jornada ordinaria debe sumar exactamente 40 horas de lunes a viernes.";
+            return "La jornada de permanencia debe sumar exactamente 40 horas semanales entre los días seleccionados de lunes a sábado.";
         }
 
         return null;
