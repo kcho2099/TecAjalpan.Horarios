@@ -784,9 +784,6 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                     b.Property<bool>("Eliminado")
                         .HasColumnType("bit");
 
-                    b.Property<bool>("EsPrincipal")
-                        .HasColumnType("bit");
-
                     b.Property<DateTime>("FechaCrea")
                         .HasColumnType("datetime2");
 
@@ -816,70 +813,11 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
 
                     b.HasIndex("CarreraId");
 
-                    b.HasIndex("DocenteId")
-                        .IsUnique()
-                        .HasFilter("[EsPrincipal] = 1 AND [Eliminado] = 0");
-
                     b.HasIndex("DocenteId", "CarreraId")
                         .IsUnique()
                         .HasFilter("[Eliminado] = 0");
 
                     b.ToTable("DocentesCarreras", "Recursos");
-                });
-
-            modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.JornadaDocente", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("DisponibilidadDocenteId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<byte>("Dia")
-                        .HasColumnType("tinyint");
-
-                    b.Property<bool>("Eliminado")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTime>("FechaCrea")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("FechaElimina")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("FechaModifica")
-                        .HasColumnType("datetime2");
-
-                    b.Property<TimeOnly>("HoraFin")
-                        .HasColumnType("time");
-
-                    b.Property<TimeOnly>("HoraInicio")
-                        .HasColumnType("time");
-
-                    b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
-                        .IsRequired()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("rowversion");
-
-                    b.Property<string>("UsuarioCrea")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("UsuarioElimina")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("UsuarioModifica")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DisponibilidadDocenteId", "Dia")
-                        .IsUnique()
-                        .HasFilter("[Eliminado] = 0");
-
-                    b.ToTable("JornadasDocentes", "Recursos");
                 });
 
             modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.EjecucionGenerador", b =>
@@ -2032,17 +1970,6 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                     b.Navigation("OfertaMateria");
                 });
 
-            modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.JornadaDocente", b =>
-                {
-                    b.HasOne("TecAjalpan.Horarios.Domain.Entities.DisponibilidadDocente", "DisponibilidadDocente")
-                        .WithMany("Jornadas")
-                        .HasForeignKey("DisponibilidadDocenteId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("DisponibilidadDocente");
-                });
-
             modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.ConfiguracionSabatina", b =>
                 {
                     b.HasOne("TecAjalpan.Horarios.Domain.Entities.Grupo", "Grupo")
@@ -2068,7 +1995,7 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
             modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.DisponibilidadDocente", b =>
                 {
                     b.HasOne("TecAjalpan.Horarios.Domain.Entities.Docente", "Docente")
-                        .WithMany("Disponibilidades")
+                        .WithMany()
                         .HasForeignKey("DocenteId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -2348,15 +2275,11 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
             modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.DisponibilidadDocente", b =>
                 {
                     b.Navigation("Bloques");
-
-                    b.Navigation("Jornadas");
                 });
 
             modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.Docente", b =>
                 {
                     b.Navigation("Carreras");
-
-                    b.Navigation("Disponibilidades");
                 });
 
             modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.Grupo", b =>
