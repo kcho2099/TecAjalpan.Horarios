@@ -27,7 +27,7 @@
   <div class="toolbar">
     <label class="search-box">
       <span>Buscar</span>
-      <input @bind="filtro" @bind:event="oninput" placeholder="Nombre o estado…" />
+      <input @bind="Filtro" @bind:event="oninput" placeholder="Nombre o estado…" />
     </label>
     <span class="record-count">@PeriodosFiltrados.Count() periodo(s)</span>
   </div>
@@ -60,7 +60,7 @@
           </tr>
         </thead>
         <tbody>
-          @foreach (var periodo in PeriodosFiltrados)
+          @foreach (var periodo in PeriodosPaginados)
           {
             <tr>
               <td>
@@ -93,6 +93,10 @@
         </tbody>
       </table>
     </div>
+    <Paginador TotalRegistros="@PeriodosFiltrados.Count()"
+                PaginaActual="@paginaActual"
+                PaginaActualChanged="CambiarPagina"
+                TamanoPagina="@TamanoPagina" />
   }
 </article>
 
@@ -171,10 +175,34 @@
 }
 
 @code {
+  private const int TamanoPagina = 10;
   private List<PeriodoDto> periodos = [];
   private GuardarPeriodoRequest modelo = NuevoModelo();
   private Guid? periodoId;
   private string filtro = string.Empty;
+  private int paginaActual = 1;
+
+  private string Filtro
+  {
+    get => filtro;
+    set
+    {
+      if (string.Equals(filtro, value, StringComparison.Ordinal))
+      {
+        return;
+      }
+
+      filtro = value;
+      paginaActual = 1;
+    }
+  }
+
+  private IEnumerable<PeriodoDto> PeriodosPaginados =>
+    PeriodosFiltrados
+      .Skip((paginaActual - 1) * TamanoPagina)
+      .Take(TamanoPagina);
+
+  private void CambiarPagina(int pagina) => paginaActual = pagina;
   private string? mensaje;
   private string? error;
   private string? errorFormulario;
