@@ -95,7 +95,8 @@ public sealed class DisponibilidadesDocentesController(
                 x => x.DocenteId == docenteId && x.PeriodoId == periodoId,
                 cancellationToken);
 
-        if (disponibilidad is null)
+        var esNueva = disponibilidad is null;
+        if (esNueva)
         {
             disponibilidad = new DisponibilidadDocente
             {
@@ -104,7 +105,7 @@ public sealed class DisponibilidadesDocentesController(
             };
             dbContext.DisponibilidadesDocentes.Add(disponibilidad);
         }
-        else if (!CoincideRowVersion(request.RowVersion, disponibilidad.RowVersion))
+        else if (!CoincideRowVersion(request.RowVersion, disponibilidad!.RowVersion))
         {
             return Conflict(new
             {
@@ -112,21 +113,36 @@ public sealed class DisponibilidadesDocentesController(
             });
         }
 
-        SincronizarJornadas(disponibilidad, request.Jornadas);
-        SincronizarBloques(disponibilidad, request.Bloques);
-        disponibilidad.Validada = false;
-        disponibilidad.FechaValidacion = null;
-        disponibilidad.UsuarioValida = null;
-
+        await using var transaction =
+            await dbContext.Database.BeginTransactionAsync(cancellationToken);
         try
         {
+            await ReemplazarJornadasAsync(
+                disponibilidad!,
+                request.Jornadas,
+                cancellationToken);
+            SincronizarBloques(disponibilidad!, request.Bloques);
+
+            disponibilidad!.Validada = false;
+            disponibilidad.FechaValidacion = null;
+            disponibilidad.UsuarioValida = null;
+
+            if (!esNueva)
+            {
+                dbContext.Entry(disponibilidad)
+                    .Property(x => x.Validada)
+                    .IsModified = true;
+            }
+
             await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {
+            await transaction.RollbackAsync(cancellationToken);
             return Conflict(new
             {
-                mensaje = "La disponibilidad cambió mientras la editabas. Recarga e inténtalo nuevamente."
+                mensaje = "La disponibilidad cambió mientras la editabas. Se conservaron los datos capturados; recarga antes de volver a guardar."
             });
         }
 
@@ -288,33 +304,40 @@ public sealed class DisponibilidadesDocentesController(
         return null;
     }
 
-    private void SincronizarJornadas(
+    private async Task ReemplazarJornadasAsync(
         DisponibilidadDocente disponibilidad,
-        IEnumerable<JornadaDocenteDto> solicitadas)
+        IReadOnlyCollection<JornadaDocenteDto> solicitadas,
+        CancellationToken cancellationToken)
     {
-        var nuevas = solicitadas.ToDictionary(
-            x => (x.Dia, x.EsSemanaSabatina));
         foreach (var actual in disponibilidad.Jornadas.ToArray())
         {
-            if (!nuevas.Remove(
-                    ((byte)actual.Dia, actual.EsSemanaSabatina),
-                    out var solicitada))
-            {
-                dbContext.JornadasDocentes.Remove(actual);
-                continue;
-            }
-            actual.HoraInicio = solicitada.HoraInicio;
-            actual.HoraFin = solicitada.HoraFin;
+            dbContext.Entry(actual).State = EntityState.Detached;
         }
+        disponibilidad.Jornadas.Clear();
 
-        foreach (var nueva in nuevas.Values
-            .Select(x => new JornadaDocente
-            {
-                Dia = (DiaAcademico)x.Dia,
-                HoraInicio = x.HoraInicio,
-                HoraFin = x.HoraFin,
-                EsSemanaSabatina = x.EsSemanaSabatina
-            }))
+        var fecha = DateTime.UtcNow;
+        var usuario = User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.Identity?.Name
+            ?? "sistema";
+
+        await dbContext.JornadasDocentes
+            .Where(x =>
+                x.DisponibilidadDocenteId == disponibilidad.Id
+                && !x.Eliminado)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(x => x.Eliminado, true)
+                    .SetProperty(x => x.FechaElimina, fecha)
+                    .SetProperty(x => x.UsuarioElimina, usuario),
+                cancellationToken);
+
+        foreach (var nueva in solicitadas.Select(x => new JornadaDocente
+        {
+            Dia = (DiaAcademico)x.Dia,
+            HoraInicio = x.HoraInicio,
+            HoraFin = x.HoraFin,
+            EsSemanaSabatina = x.EsSemanaSabatina
+        }))
         {
             disponibilidad.Jornadas.Add(nueva);
         }
