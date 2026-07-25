@@ -82,44 +82,47 @@ a {
   gap: 9px;
 }
 
-.saturday-workday-toggle {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: fit-content;
-  max-width: 100%;
-  margin: 16px 0;
-  padding: 13px 16px;
-  border: 1px solid var(--borde);
-  border-radius: 12px;
-  background: #faf8f7;
-  cursor: pointer;
-}
-
-.saturday-workday-toggle input {
-  flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
-  accent-color: var(--vino);
-}
-
-.saturday-workday-toggle span {
-  display: grid;
-  gap: 2px;
-}
-
-.saturday-workday-toggle small {
-  color: var(--gris);
-}
-
 .workday-row {
   display: grid;
-  grid-template-columns: 120px repeat(2, minmax(150px, 220px)) 80px;
+  grid-template-columns: 110px 150px repeat(2, minmax(150px, 220px)) 80px;
   gap: 14px;
   align-items: end;
   padding: 12px;
   border: 1px solid var(--borde);
   border-radius: 9px;
+  transition: border-color .16s ease, background-color .16s ease;
+}
+
+.workday-row.is-active {
+  border-color: #d6b4b5;
+  background: #fffafa;
+}
+
+.workday-row.is-day-off {
+  color: var(--gris);
+  background: #f7f5f4;
+}
+
+.workday-status-toggle {
+  min-height: 39px;
+  padding: 8px 12px;
+  border: 1px solid #cfc7c5;
+  border-radius: 999px;
+  color: #645e5d;
+  background: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.workday-status-toggle.is-active {
+  border-color: var(--vino);
+  color: #fff;
+  background: var(--vino);
+}
+
+.workday-status-toggle:focus-visible {
+  outline: 3px solid #d7a8aa;
+  outline-offset: 2px;
 }
 
 .workday-row label {
@@ -133,6 +136,12 @@ a {
   border: 1px solid var(--borde);
   border-radius: 7px;
   padding: 8px;
+}
+
+.workday-row input:disabled {
+  color: #918987;
+  background: #ece8e7;
+  cursor: not-allowed;
 }
 
 .workweek-total {
