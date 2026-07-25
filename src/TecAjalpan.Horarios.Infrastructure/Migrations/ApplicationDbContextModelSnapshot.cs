@@ -1590,6 +1590,11 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Estado")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Periodos_UnicoActivo")
+                        .HasFilter("[Estado] = 2 AND [Eliminado] = 0");
+
                     b.HasIndex("Nombre")
                         .IsUnique();
 
