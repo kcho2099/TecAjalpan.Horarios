@@ -76,9 +76,10 @@ public sealed class DisponibilidadesDocentesController(
         {
             return BadRequest(new { mensaje = "El periodo no existe." });
         }
-        if (periodo.Estado == EstadoPeriodo.Cerrado)
+        if (periodo.Estado != EstadoPeriodo.Activo
+            || periodo.FechaFin < DateOnly.FromDateTime(DateTime.Today))
         {
-            return Conflict(new { mensaje = "No se puede modificar la disponibilidad de un periodo cerrado." });
+            return Conflict(new { mensaje = "La disponibilidad sólo puede modificarse en el periodo activo." });
         }
 
         var error = ValidarReglas(docente.Tipo, request);
