@@ -1212,3 +1212,121 @@ main {
     justify-content: space-between;
   }
 }
+
+
+/* Selector moderno de carreras */
+.career-selector .check-field {
+  position: relative;
+  min-width: 0;
+  min-height: 88px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22px;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--borde);
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color .18s ease, background-color .18s ease, box-shadow .18s ease;
+}
+
+.career-selector .check-field:hover {
+  border-color: #c9a9aa;
+  box-shadow: 0 4px 14px rgba(130, 36, 39, .07);
+}
+
+.career-selector .check-field:has(> input[type="checkbox"]:checked) {
+  border-color: #b7686b;
+  background: #fcf6f6;
+  box-shadow: 0 0 0 2px rgba(130, 36, 39, .08);
+}
+
+.career-selector .check-field > input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  grid-column: 2;
+  grid-row: 1;
+  margin: 0;
+  padding: 0;
+  border: 2px solid #aaa4a3;
+  border-radius: 6px;
+  appearance: none;
+  background-color: #fff;
+  background-position: center;
+  background-repeat: no-repeat;
+  cursor: pointer;
+  transition: border-color .16s ease, background-color .16s ease, transform .16s ease;
+}
+
+.career-selector .check-field > input[type="checkbox"]:hover {
+  border-color: var(--vino);
+}
+
+.career-selector .check-field > input[type="checkbox"]:checked {
+  border-color: var(--vino);
+  background-color: var(--vino);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Cpath d='M3 7.2 5.7 10 11 4.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.career-selector .check-field > input[type="checkbox"]:active {
+  transform: scale(.92);
+}
+
+.career-selector .check-field > input[type="checkbox"]:focus-visible {
+  outline: 3px solid rgba(130, 36, 39, .2);
+  outline-offset: 3px;
+}
+
+.career-selector .check-field > span {
+  min-width: 0;
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.career-selector .check-field > span strong,
+.career-selector .career-copy strong {
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.career-selector .check-field > span small,
+.career-selector .career-copy small {
+  margin-top: 5px;
+  line-height: 1.35;
+}
+
+.career-selector .career-card {
+  grid-template-columns: minmax(0, 1fr) 22px auto;
+  cursor: default;
+}
+
+.career-selector .career-card > .career-copy {
+  min-width: 0;
+  grid-column: 1;
+  grid-row: 1;
+  cursor: pointer;
+}
+
+.career-selector .career-card > .career-checkbox {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.career-selector .career-card > .adscription-switch {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+@media (max-width: 520px) {
+  .career-selector .career-card {
+    grid-template-columns: minmax(0, 1fr) 22px;
+  }
+
+  .career-selector .career-card > .adscription-switch {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: flex-start;
+    padding-top: 2px;
+  }
+}
