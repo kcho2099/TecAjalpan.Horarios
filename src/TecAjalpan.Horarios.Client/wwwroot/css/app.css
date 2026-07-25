@@ -118,12 +118,83 @@ a {
 .availability-table th,
 .availability-table td {
   border: 1px solid var(--borde);
-  padding: 10px;
 }
 
-.availability-table thead th {
+.availability-table th {
+  padding: 12px 14px;
   background: #f7f5f4;
   font-size: 12px;
+  white-space: nowrap;
+}
+
+.availability-table tbody th {
+  width: 110px;
+  color: var(--tinta);
+  font-weight: 700;
+}
+
+.availability-cell-container {
+  min-width: 112px;
+  height: 58px;
+  padding: 0;
+}
+
+.availability-cell {
+  width: 100%;
+  min-height: 58px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 0;
+  color: transparent;
+  background: #fff;
+  transition: background-color .16s ease, box-shadow .16s ease, color .16s ease;
+}
+
+.availability-cell:hover {
+  background: #f9eeee;
+  color: #b68082;
+}
+
+.availability-cell.is-selected {
+  color: #fff;
+  background: var(--vino);
+  box-shadow: inset 0 0 0 2px var(--vino-oscuro);
+}
+
+.availability-cell:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 3px solid #d7a8aa;
+  outline-offset: -3px;
+}
+
+.availability-check {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #d7d0cf;
+  border-radius: 8px;
+  color: inherit;
+  font-weight: 900;
+}
+
+.availability-cell.is-selected .availability-check {
+  border-color: rgba(255,255,255,.85);
+  background: rgba(255,255,255,.12);
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
 }
 
 @media (max-width: 820px) {
