@@ -5,12 +5,14 @@ using TecAjalpan.Horarios.Application.Abstractions;
 using TecAjalpan.Horarios.Application.Security;
 using TecAjalpan.Horarios.Infrastructure.DependencyInjection;
 using TecAjalpan.Horarios.Web.Security;
+using TecAjalpan.Horarios.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IUsuarioActual, UsuarioActual>();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddHostedService<CierreAutomaticoPeriodosService>();
 builder.Services.AddControllersWithViews(options =>
 {
     options.Filters.Add(new AutoValidateAntiforgeryTokenAttribute());
