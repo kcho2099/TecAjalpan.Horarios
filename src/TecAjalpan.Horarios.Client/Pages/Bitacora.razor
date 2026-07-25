@@ -22,7 +22,7 @@
   <div class="toolbar">
     <label class="search-box">
       <span>Buscar</span>
-      <input @bind="filtro" @bind:event="oninput"
+      <input @bind="Filtro" @bind:event="oninput"
              placeholder="Usuario, acción, entidad o identificador…" />
     </label>
     <span class="record-count">@RegistrosFiltrados.Count() evento(s)</span>
@@ -55,7 +55,7 @@
           </tr>
         </thead>
         <tbody>
-          @foreach (var registro in RegistrosFiltrados)
+          @foreach (var registro in RegistrosPaginados)
           {
             <tr>
               <td class="audit-date">@registro.Fecha.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
@@ -79,6 +79,10 @@
         </tbody>
       </table>
     </div>
+    <Paginador TotalRegistros="@RegistrosFiltrados.Count()"
+                PaginaActual="@paginaActual"
+                PaginaActualChanged="CambiarPagina"
+                TamanoPagina="@TamanoPagina" />
   }
 </article>
 
@@ -121,6 +125,7 @@
 }
 
 @code {
+  private const int TamanoPagina = 10;
   private static readonly JsonSerializerOptions JsonIndentado = new()
   {
     WriteIndented = true
@@ -129,6 +134,29 @@
   private List<BitacoraDto> registros = [];
   private BitacoraDto? registroDetalle;
   private string filtro = string.Empty;
+  private int paginaActual = 1;
+
+  private string Filtro
+  {
+    get => filtro;
+    set
+    {
+      if (string.Equals(filtro, value, StringComparison.Ordinal))
+      {
+        return;
+      }
+
+      filtro = value;
+      paginaActual = 1;
+    }
+  }
+
+  private IEnumerable<BitacoraDto> RegistrosPaginados =>
+    RegistrosFiltrados
+      .Skip((paginaActual - 1) * TamanoPagina)
+      .Take(TamanoPagina);
+
+  private void CambiarPagina(int pagina) => paginaActual = pagina;
   private string? error;
   private bool cargando = true;
 
