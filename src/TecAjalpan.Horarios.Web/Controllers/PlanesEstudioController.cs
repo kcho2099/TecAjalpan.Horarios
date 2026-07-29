@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TecAjalpan.Horarios.Application.Security;
 using TecAjalpan.Horarios.Contracts.PlanesEstudio;
-using TecAjalpan.Horarios.Domain.Common;
 using TecAjalpan.Horarios.Domain.Entities;
 using TecAjalpan.Horarios.Infrastructure.Persistence;
 
@@ -74,7 +73,7 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
     {
         var reticula = await dbContext.Reticulas.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (reticula is null) return NotFound();
-        if (!PrepararConcurrencia(reticula, request.RowVersion)) return Conflicto("La retícula");
+        if (!Coincide(request.RowVersion, reticula.RowVersion)) return Conflicto("La retícula");
         Aplicar(request, reticula);
         return await GuardarReticula(reticula, false, cancellationToken);
     }
@@ -86,7 +85,7 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
     {
         var reticula = await dbContext.Reticulas.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (reticula is null) return NotFound();
-        if (!PrepararConcurrencia(reticula, request.RowVersion)) return Conflicto("La retícula");
+        if (!Coincide(request.RowVersion, reticula.RowVersion)) return Conflicto("La retícula");
         reticula.Activo = request.Activo;
         await dbContext.SaveChangesAsync(cancellationToken);
         return Ok(Mapear(reticula));
@@ -116,7 +115,7 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
         var materia = await dbContext.Materias.Include(x => x.Modalidades)
             .ThenInclude(x => x.Modalidad).SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (materia is null) return NotFound();
-        if (!PrepararConcurrencia(materia, request.RowVersion)) return Conflicto("La materia");
+        if (!Coincide(request.RowVersion, materia.RowVersion)) return Conflicto("La materia");
         Aplicar(request, materia);
         dbContext.Entry(materia).Property(x => x.Nombre).IsModified = true;
         await SincronizarModalidades(materia, request.ModalidadIds, cancellationToken);
@@ -131,7 +130,7 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
         var materia = await dbContext.Materias.Include(x => x.Modalidades)
             .ThenInclude(x => x.Modalidad).SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (materia is null) return NotFound();
-        if (!PrepararConcurrencia(materia, request.RowVersion)) return Conflicto("La materia");
+        if (!Coincide(request.RowVersion, materia.RowVersion)) return Conflicto("La materia");
         materia.Activo = request.Activo;
         await dbContext.SaveChangesAsync(cancellationToken);
         return Ok(Mapear(materia));
@@ -214,14 +213,12 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
     private ConflictObjectResult Conflicto(string entidad) =>
         Conflict(new { mensaje = $"{entidad} fue modificada por otra persona. Recarga e inténtalo nuevamente." });
 
-    private bool PrepararConcurrencia(EntidadAuditable entidad, string? valor)
+    private static bool Coincide(string? valor, byte[] actual)
     {
         if (string.IsNullOrWhiteSpace(valor)) return false;
         try
         {
-            dbContext.Entry(entidad).Property(x => x.RowVersion).OriginalValue =
-                Convert.FromBase64String(valor);
-            return true;
+            return Convert.FromBase64String(valor).SequenceEqual(actual);
         }
         catch (FormatException)
         {
