@@ -63,7 +63,7 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
         var reticula = new Reticula();
         Aplicar(request, reticula);
         dbContext.Reticulas.Add(reticula);
-        return await GuardarReticula(reticula, cancellationToken, true);
+        return await GuardarReticula(reticula, true, cancellationToken);
     }
 
     [HttpPut("reticulas/{id:guid}")]
@@ -75,7 +75,7 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
         if (reticula is null) return NotFound();
         if (!Coincide(request.RowVersion, reticula.RowVersion)) return Conflicto("La retícula");
         Aplicar(request, reticula);
-        return await GuardarReticula(reticula, cancellationToken, false);
+        return await GuardarReticula(reticula, false, cancellationToken);
     }
 
     [HttpPatch("reticulas/{id:guid}/estado")]
@@ -102,7 +102,7 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
         Aplicar(request, materia);
         dbContext.Materias.Add(materia);
         await SincronizarModalidades(materia, request.ModalidadIds, cancellationToken);
-        return await GuardarMateria(materia, cancellationToken, true);
+        return await GuardarMateria(materia, true, cancellationToken);
     }
 
     [HttpPut("materias/{id:guid}")]
@@ -118,7 +118,7 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
         if (!Coincide(request.RowVersion, materia.RowVersion)) return Conflicto("La materia");
         Aplicar(request, materia);
         await SincronizarModalidades(materia, request.ModalidadIds, cancellationToken);
-        return await GuardarMateria(materia, cancellationToken, false);
+        return await GuardarMateria(materia, false, cancellationToken);
     }
 
     [HttpPatch("materias/{id:guid}/estado")]
@@ -160,7 +160,7 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
     }
 
     private async Task<ActionResult<ReticulaDto>> GuardarReticula(
-        Reticula reticula, CancellationToken cancellationToken, bool creada)
+        Reticula reticula, bool creada, CancellationToken cancellationToken)
     {
         try { await dbContext.SaveChangesAsync(cancellationToken); }
         catch (DbUpdateConcurrencyException) { return Conflicto("La retícula"); }
@@ -169,7 +169,7 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
     }
 
     private async Task<ActionResult<MateriaDto>> GuardarMateria(
-        Materia materia, CancellationToken cancellationToken, bool creada)
+        Materia materia, bool creada, CancellationToken cancellationToken)
     {
         try
         {
