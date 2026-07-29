@@ -33,13 +33,10 @@ public sealed class DisponibilidadesDocentesController(
             return Forbid();
         }
 
-        var disponibilidad = await dbContext.DisponibilidadesDocentes
-            .AsNoTracking()
-            .Include(x => x.Jornadas)
-            .Include(x => x.Bloques)
-            .SingleOrDefaultAsync(
-                x => x.DocenteId == docenteId && x.PeriodoId == periodoId,
-                cancellationToken);
+        var disponibilidad = await CargarDisponibilidadAsync(
+            docenteId,
+            periodoId,
+            cancellationToken);
 
         return Ok(Mapear(disponibilidad, docente, periodoId));
     }
@@ -82,60 +79,108 @@ public sealed class DisponibilidadesDocentesController(
             return Conflict(new { mensaje = "La disponibilidad sólo puede modificarse en el periodo activo." });
         }
 
-        var error = ValidarReglas(docente.Tipo, request);
+        var error = ValidarBorrador(docente.Tipo, request);
         if (error is not null)
         {
             return BadRequest(new { mensaje = error });
         }
 
         var disponibilidad = await dbContext.DisponibilidadesDocentes
-            .Include(x => x.Jornadas)
-            .Include(x => x.Bloques)
+            .AsNoTracking()
             .SingleOrDefaultAsync(
                 x => x.DocenteId == docenteId && x.PeriodoId == periodoId,
                 cancellationToken);
 
-        var esNueva = disponibilidad is null;
-        if (esNueva)
+        byte[]? versionEsperada = null;
+        if (disponibilidad is not null)
         {
-            disponibilidad = new DisponibilidadDocente
+            versionEsperada = DecodificarRowVersion(request.RowVersion);
+            if (versionEsperada is null
+                || !versionEsperada.SequenceEqual(disponibilidad.RowVersion))
             {
-                DocenteId = docenteId,
-                PeriodoId = periodoId
-            };
-            dbContext.DisponibilidadesDocentes.Add(disponibilidad);
-        }
-        else if (!CoincideRowVersion(request.RowVersion, disponibilidad!.RowVersion))
-        {
-            return Conflict(new
-            {
-                mensaje = "La disponibilidad fue modificada por otra persona. Recarga e inténtalo nuevamente."
-            });
+                return Conflict(new
+                {
+                    mensaje = "La disponibilidad fue modificada por otra persona. Recarga e inténtalo nuevamente."
+                });
+            }
         }
 
         await using var transaction =
             await dbContext.Database.BeginTransactionAsync(cancellationToken);
         try
         {
-            await ReemplazarJornadasAsync(
-                disponibilidad!,
-                request.Jornadas,
-                cancellationToken);
-            await ReemplazarBloquesAsync(
-                disponibilidad!,
-                request.Bloques,
-                cancellationToken);
-
-            disponibilidad!.Validada = false;
-            disponibilidad.FechaValidacion = null;
-            disponibilidad.UsuarioValida = null;
-
-            if (!esNueva)
+            Guid disponibilidadId;
+            if (disponibilidad is null)
             {
-                dbContext.Entry(disponibilidad)
-                    .Property(x => x.Validada)
-                    .IsModified = true;
+                var nueva = new DisponibilidadDocente
+                {
+                    DocenteId = docenteId,
+                    PeriodoId = periodoId,
+                    Validada = false
+                };
+                dbContext.DisponibilidadesDocentes.Add(nueva);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                disponibilidadId = nueva.Id;
             }
+            else
+            {
+                var usuario = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                    ?? User.Identity?.Name
+                    ?? "sistema";
+                var fecha = DateTime.UtcNow;
+                var filasActualizadas = await dbContext.Database.ExecuteSqlInterpolatedAsync(
+                    $"""
+                    UPDATE [Recursos].[DisponibilidadesDocentes]
+                    SET [Validada] = CAST(0 AS bit),
+                        [FechaValidacion] = NULL,
+                        [UsuarioValida] = NULL,
+                        [FechaModifica] = {fecha},
+                        [UsuarioModifica] = {usuario}
+                    WHERE [Id] = {disponibilidad.Id}
+                      AND [RowVersion] = {versionEsperada!}
+                    """,
+                    cancellationToken);
+                if (filasActualizadas != 1)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return Conflict(new
+                    {
+                        mensaje = "La disponibilidad fue modificada por otra persona. Recarga e inténtalo nuevamente."
+                    });
+                }
+
+                disponibilidadId = disponibilidad.Id;
+            }
+
+            await dbContext.JornadasDocentes
+                .IgnoreQueryFilters()
+                .Where(x => x.DisponibilidadDocenteId == disponibilidadId)
+                .ExecuteDeleteAsync(cancellationToken);
+
+            await dbContext.DisponibilidadesBloques
+                .IgnoreQueryFilters()
+                .Where(x => x.DisponibilidadDocenteId == disponibilidadId)
+                .ExecuteDeleteAsync(cancellationToken);
+
+            dbContext.JornadasDocentes.AddRange(
+                request.Jornadas.Select(x => new JornadaDocente
+                {
+                    DisponibilidadDocenteId = disponibilidadId,
+                    Dia = (DiaAcademico)x.Dia,
+                    HoraInicio = x.HoraInicio,
+                    HoraFin = x.HoraFin,
+                    EsSemanaSabatina = false
+                }));
+
+            dbContext.DisponibilidadesBloques.AddRange(
+                request.Bloques.Select(x => new DisponibilidadBloque
+                {
+                    DisponibilidadDocenteId = disponibilidadId,
+                    Dia = (DiaAcademico)x.Dia,
+                    Bloque = x.Bloque,
+                    Disponible = true,
+                    Preferente = x.Preferente
+                }));
 
             await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
@@ -145,11 +190,15 @@ public sealed class DisponibilidadesDocentesController(
             await transaction.RollbackAsync(cancellationToken);
             return Conflict(new
             {
-                mensaje = "La disponibilidad cambió mientras la editabas. Se conservaron los datos capturados; recarga antes de volver a guardar."
+                mensaje = "La disponibilidad fue modificada por otra persona. Recarga e inténtalo nuevamente."
             });
         }
 
-        return Ok(Mapear(disponibilidad, docente, periodoId));
+        var guardada = await CargarDisponibilidadAsync(
+            docenteId,
+            periodoId,
+            cancellationToken);
+        return Ok(Mapear(guardada, docente, periodoId));
     }
 
     [HttpPost("{periodoId:guid}/validar")]
@@ -185,10 +234,27 @@ public sealed class DisponibilidadesDocentesController(
             return Conflict(new { mensaje = "La disponibilidad cambió. Recarga e inténtalo nuevamente." });
         }
 
+        var error = ValidarParaConfirmar(docente.Tipo, disponibilidad);
+        if (error is not null)
+        {
+            return BadRequest(new { mensaje = error });
+        }
+
         disponibilidad.Validada = true;
         disponibilidad.FechaValidacion = DateTime.UtcNow;
         disponibilidad.UsuarioValida = User.Identity?.Name ?? "sistema";
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict(new
+            {
+                mensaje = "La disponibilidad cambió mientras la validabas. Recarga e inténtalo nuevamente."
+            });
+        }
+
         return Ok(Mapear(disponibilidad, docente, periodoId));
     }
 
@@ -198,6 +264,18 @@ public sealed class DisponibilidadesDocentesController(
         await dbContext.Docentes
             .Include(x => x.Carreras)
             .SingleOrDefaultAsync(x => x.Id == docenteId, cancellationToken);
+
+    private async Task<DisponibilidadDocente?> CargarDisponibilidadAsync(
+        Guid docenteId,
+        Guid periodoId,
+        CancellationToken cancellationToken) =>
+        await dbContext.DisponibilidadesDocentes
+            .AsNoTracking()
+            .Include(x => x.Jornadas)
+            .Include(x => x.Bloques)
+            .SingleOrDefaultAsync(
+                x => x.DocenteId == docenteId && x.PeriodoId == periodoId,
+                cancellationToken);
 
     private async Task<bool> TieneAccesoAsync(
         Docente docente,
@@ -231,52 +309,76 @@ public sealed class DisponibilidadesDocentesController(
         || User.IsInRole(Roles.Secretaria)
             && await TieneAccesoAsync(docente, cancellationToken);
 
-    private static string? ValidarReglas(
+    private static string? ValidarBorrador(
         TipoDocente tipo,
         GuardarDisponibilidadDocenteRequest request)
     {
         if (tipo == TipoDocente.Asignatura)
         {
+            if (request.Jornadas.Count != 0)
+            {
+                return "Los docentes de asignatura sólo registran ventanas disponibles para clase.";
+            }
+
             var bloques = request.Bloques
                 .Select(x => (x.Dia, x.Bloque))
                 .ToArray();
-            if (bloques.Length == 0)
-            {
-                return "Selecciona al menos un bloque disponible.";
-            }
             if (bloques.Distinct().Count() != bloques.Length)
             {
                 return "La disponibilidad debe contener bloques únicos.";
             }
-            if (bloques.Any(x => x.Dia is < 1 or > 6 || x.Bloque is < 1 or > 8))
-            {
-                return "Las clases sólo pueden registrarse en bloques de 08:00 a 16:00.";
-            }
-
-            return request.Jornadas.Count == 0
-                ? null
-                : "Los docentes de asignatura sólo registran ventanas disponibles para clase.";
+            return bloques.Any(x => x.Dia is < 1 or > 6 || x.Bloque is < 1 or > 8)
+                ? "Las clases sólo pueden registrarse en bloques de 08:00 a 16:00."
+                : null;
         }
 
         if (request.Bloques.Count != 0)
         {
             return "A los docentes de tiempo completo sólo se les registra el inicio y fin de su jornada.";
         }
-
         if (request.Jornadas.Any(x => x.EsSemanaSabatina))
         {
             return "La jornada debe registrarse como una sola distribución semanal de lunes a sábado.";
         }
 
-        return ValidarPerfilJornada(request.Jornadas);
+        return ValidarEstructuraJornada(request.Jornadas);
     }
 
-    private static string? ValidarPerfilJornada(
+    private static string? ValidarParaConfirmar(
+        TipoDocente tipo,
+        DisponibilidadDocente disponibilidad)
+    {
+        if (tipo == TipoDocente.Asignatura)
+        {
+            return disponibilidad.Bloques.Any(x => x.Disponible)
+                ? null
+                : "Selecciona al menos un bloque disponible antes de validar.";
+        }
+
+        var jornadas = disponibilidad.Jornadas
+            .Where(x => !x.EsSemanaSabatina)
+            .Select(x => new JornadaDocenteDto(
+                (byte)x.Dia,
+                x.HoraInicio,
+                x.HoraFin,
+                false))
+            .ToArray();
+        var error = ValidarEstructuraJornada(jornadas);
+        if (error is not null)
+        {
+            return error;
+        }
+
+        return jornadas.Sum(x => (x.HoraFin - x.HoraInicio).TotalHours) == 40
+            ? null
+            : "La jornada de permanencia debe sumar exactamente 40 horas semanales antes de validar.";
+    }
+
+    private static string? ValidarEstructuraJornada(
         IReadOnlyCollection<JornadaDocenteDto> jornadas)
     {
         var dias = jornadas.Select(x => x.Dia).ToArray();
-        if (dias.Length == 0
-            || dias.Distinct().Count() != dias.Length
+        if (dias.Distinct().Count() != dias.Length
             || dias.Any(x => x is < 1 or > 6))
         {
             return "La jornada semanal debe incluir días únicos entre lunes y sábado.";
@@ -290,77 +392,13 @@ public sealed class DisponibilidadesDocentesController(
                 Duracion = x.HoraFin - x.HoraInicio
             })
             .ToArray();
-        if (duraciones.Any(x =>
-                x.HoraInicio < new TimeOnly(7, 0)
-                || x.HoraFin > new TimeOnly(18, 0)
-                || x.Duracion <= TimeSpan.Zero
-                || x.Duracion > TimeSpan.FromHours(8)))
-        {
-            return "Cada día seleccionado debe tener más de 0 y hasta 8 horas, dentro del horario de 07:00 a 18:00.";
-        }
-
-        if (duraciones.Sum(x => x.Duracion.TotalHours) != 40)
-        {
-            return "La jornada de permanencia debe sumar exactamente 40 horas semanales entre los días seleccionados de lunes a sábado.";
-        }
-
-        return null;
-    }
-
-    private async Task ReemplazarJornadasAsync(
-        DisponibilidadDocente disponibilidad,
-        IReadOnlyCollection<JornadaDocenteDto> solicitadas,
-        CancellationToken cancellationToken)
-    {
-        foreach (var actual in disponibilidad.Jornadas.ToArray())
-        {
-            dbContext.Entry(actual).State = EntityState.Detached;
-        }
-        disponibilidad.Jornadas.Clear();
-
-        await dbContext.JornadasDocentes
-            .IgnoreQueryFilters()
-            .Where(x => x.DisponibilidadDocenteId == disponibilidad.Id)
-            .ExecuteDeleteAsync(cancellationToken);
-
-        foreach (var nueva in solicitadas.Select(x => new JornadaDocente
-        {
-            Dia = (DiaAcademico)x.Dia,
-            HoraInicio = x.HoraInicio,
-            HoraFin = x.HoraFin,
-            EsSemanaSabatina = x.EsSemanaSabatina
-        }))
-        {
-            disponibilidad.Jornadas.Add(nueva);
-        }
-    }
-
-    private async Task ReemplazarBloquesAsync(
-        DisponibilidadDocente disponibilidad,
-        IReadOnlyCollection<DisponibilidadBloqueDto> solicitados,
-        CancellationToken cancellationToken)
-    {
-        foreach (var actual in disponibilidad.Bloques.ToArray())
-        {
-            dbContext.Entry(actual).State = EntityState.Detached;
-        }
-        disponibilidad.Bloques.Clear();
-
-        await dbContext.DisponibilidadesBloques
-            .IgnoreQueryFilters()
-            .Where(x => x.DisponibilidadDocenteId == disponibilidad.Id)
-            .ExecuteDeleteAsync(cancellationToken);
-
-        foreach (var nuevo in solicitados.Select(x => new DisponibilidadBloque
-        {
-            Dia = (DiaAcademico)x.Dia,
-            Bloque = x.Bloque,
-            Disponible = true,
-            Preferente = x.Preferente
-        }))
-        {
-            disponibilidad.Bloques.Add(nuevo);
-        }
+        return duraciones.Any(x =>
+            x.HoraInicio < new TimeOnly(7, 0)
+            || x.HoraFin > new TimeOnly(18, 0)
+            || x.Duracion <= TimeSpan.Zero
+            || x.Duracion > TimeSpan.FromHours(8))
+            ? "Cada día seleccionado debe tener más de 0 y hasta 8 horas, dentro del horario de 07:00 a 18:00."
+            : null;
     }
 
     private static DisponibilidadDocenteDto Mapear(
@@ -396,19 +434,22 @@ public sealed class DisponibilidadesDocentesController(
                 ? null
                 : Convert.ToBase64String(disponibilidad.RowVersion));
 
-    private static bool CoincideRowVersion(string? valor, byte[] actual)
+    private static byte[]? DecodificarRowVersion(string? valor)
     {
         if (string.IsNullOrWhiteSpace(valor))
         {
-            return false;
+            return null;
         }
         try
         {
-            return Convert.FromBase64String(valor).SequenceEqual(actual);
+            return Convert.FromBase64String(valor);
         }
         catch (FormatException)
         {
-            return false;
+            return null;
         }
     }
+
+    private static bool CoincideRowVersion(string? valor, byte[] actual) =>
+        DecodificarRowVersion(valor)?.SequenceEqual(actual) == true;
 }
