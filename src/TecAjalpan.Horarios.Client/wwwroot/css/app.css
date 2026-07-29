@@ -1514,3 +1514,47 @@ main {
     flex-direction: column;
   }
 }
+
+
+.validation-inbox {
+  margin-bottom: 1.25rem;
+}
+
+.validation-inbox-list {
+  display: grid;
+  gap: .65rem;
+  margin-top: 1rem;
+}
+
+.validation-inbox-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .9rem 1rem;
+  border: 1px solid var(--borde);
+  border-radius: .75rem;
+  background: #fff;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+
+.validation-inbox-item:hover,
+.validation-inbox-item:focus-visible {
+  border-color: var(--vino);
+  background: #faf5f6;
+  outline: none;
+}
+
+.validation-inbox-item strong,
+.validation-inbox-item small {
+  display: block;
+}
+
+.validation-inbox-item small {
+  margin-top: .2rem;
+  color: var(--gris);
+}
