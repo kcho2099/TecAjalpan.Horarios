@@ -30,7 +30,7 @@
   <div class="toolbar">
     <label class="search-box">
       <span>Buscar</span>
-      <input @bind="filtro" @bind:event="oninput"
+      <input @bind="Filtro" @bind:event="oninput"
              placeholder="Clave, nombre o estado…" />
     </label>
     <span class="record-count">@CarrerasFiltradas.Count() carrera(s)</span>
@@ -68,7 +68,7 @@
           </tr>
         </thead>
         <tbody>
-          @foreach (var carrera in CarrerasFiltradas)
+          @foreach (var carrera in CarrerasPaginadas)
           {
             <tr class="@(!carrera.Activo ? "row-inactive" : null)">
               <td><strong>@carrera.Clave</strong></td>
@@ -95,6 +95,10 @@
         </tbody>
       </table>
     </div>
+    <Paginador TotalRegistros="@CarrerasFiltradas.Count()"
+                PaginaActual="@paginaActual"
+                PaginaActualChanged="CambiarPagina"
+                TamanoPagina="@TamanoPagina" />
   }
 </article>
 
@@ -178,11 +182,35 @@
 }
 
 @code {
+  private const int TamanoPagina = 10;
   private List<CarreraDto> carreras = [];
   private GuardarCarreraRequest modelo = new();
   private Guid? carreraId;
   private CarreraDto? carreraAccion;
   private string filtro = string.Empty;
+  private int paginaActual = 1;
+
+  private string Filtro
+  {
+    get => filtro;
+    set
+    {
+      if (string.Equals(filtro, value, StringComparison.Ordinal))
+      {
+        return;
+      }
+
+      filtro = value;
+      paginaActual = 1;
+    }
+  }
+
+  private IEnumerable<CarreraDto> CarrerasPaginadas =>
+    CarrerasFiltradas
+      .Skip((paginaActual - 1) * TamanoPagina)
+      .Take(TamanoPagina);
+
+  private void CambiarPagina(int pagina) => paginaActual = pagina;
   private string? mensaje;
   private string? error;
   private string? errorFormulario;

@@ -34,8 +34,16 @@
           <NavLink href="/bitacora">Bitácora</NavLink>
         </Authorized>
       </AuthorizeView>
-      <NavLink href="/docentes">Docentes</NavLink>
-      <NavLink href="/disponibilidad">Disponibilidad</NavLink>
+      <AuthorizeView Roles="Administrador,Secretaría,Jefatura,Subdirección Académica">
+        <Authorized>
+          <NavLink href="/docentes">Docentes</NavLink>
+        </Authorized>
+      </AuthorizeView>
+      <AuthorizeView Roles="Administrador,Secretaría,Jefatura,Subdirección Académica">
+        <Authorized>
+          <NavLink href="/disponibilidad">Disponibilidad</NavLink>
+        </Authorized>
+      </AuthorizeView>
       <NavLink href="/oferta">Oferta académica</NavLink>
       <NavLink href="/generador">Generador</NavLink>
       <NavLink href="/horario">Editor del horario</NavLink>

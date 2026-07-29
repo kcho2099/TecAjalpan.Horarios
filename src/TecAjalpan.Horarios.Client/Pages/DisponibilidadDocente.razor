@@ -1,0 +1,661 @@
+@page "/disponibilidad"
+@attribute [Authorize(Roles = "Administrador,Secretaría,Jefatura,Subdirección Académica")]
+@inject DocentesApi DocentesApi
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Disponibilidad docente | Horarios Tec Ajalpan</PageTitle>
+
+<div class="page-heading">
+  <div>
+    <span class="eyebrow">Recursos académicos</span>
+    <h1>Disponibilidad docente</h1>
+    <p>Registra la jornada de permanencia y las ventanas disponibles para impartir clases por periodo.</p>
+  </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(mensaje))
+{
+  <div class="alerta-exito">@mensaje</div>
+}
+@if (!string.IsNullOrWhiteSpace(error))
+{
+  <div class="alerta-error">@error</div>
+}
+
+<article class="panel">
+  <div class="availability-filters">
+    <div class="form-field">
+      <label for="periodo">Periodo</label>
+      <select id="periodo" @bind="periodoId" @bind:after="CargarDisponibilidad">
+        <option value="@Guid.Empty">Selecciona un periodo</option>
+        @foreach (var periodo in periodos)
+        {
+          <option value="@periodo.Id">@periodo.Nombre</option>
+        }
+      </select>
+      @if (periodos.Count == 0)
+      {
+        <small>No hay un periodo activo disponible para captura.</small>
+      }
+    </div>
+    <div class="form-field">
+      <label for="docente">Docente</label>
+      <select id="docente" @bind="docenteId" @bind:after="CargarDisponibilidad">
+        <option value="@Guid.Empty">Selecciona un docente</option>
+        @foreach (var docente in docentes.Where(x => x.Activo))
+        {
+          <option value="@docente.Id">@docente.Apellidos, @docente.Nombres</option>
+        }
+      </select>
+    </div>
+  </div>
+</article>
+
+@if (puedeValidar)
+{
+  <article class="panel validation-inbox">
+    <div class="panel-title">
+      <div>
+        <span class="eyebrow">Jefatura</span>
+        <h2>Disponibilidades pendientes de validación</h2>
+        <p>Abre una captura, revisa su distribución y confírmala para utilizarla en las siguientes etapas.</p>
+      </div>
+      <button type="button"
+              class="btn-link"
+              disabled="@cargandoPendientes"
+              @onclick="CargarPendientes">
+        @(cargandoPendientes ? "Actualizando…" : "Actualizar")
+      </button>
+    </div>
+
+    @if (cargandoPendientes)
+    {
+      <div class="table-state">Buscando disponibilidades pendientes…</div>
+    }
+    else if (pendientes.Count == 0)
+    {
+      <div class="table-state">No hay disponibilidades pendientes en el periodo activo.</div>
+    }
+    else
+    {
+      <div class="validation-inbox-list">
+        @foreach (var pendiente in pendientes)
+        {
+          <button type="button"
+                  class="validation-inbox-item"
+                  @onclick="() => AbrirPendiente(pendiente)">
+            <span>
+              <strong>@pendiente.Docente.Apellidos, @pendiente.Docente.Nombres</strong>
+              <small>@pendiente.Docente.TipoNombre · @CarreraAdscripcion(pendiente.Docente)</small>
+            </span>
+            <span class="status status-closed">Revisar</span>
+          </button>
+        }
+      </div>
+    }
+  </article>
+}
+
+@if (cargando)
+{
+  <div class="table-state">Cargando…</div>
+}
+else if (modelo is not null && DocenteSeleccionado is not null)
+{
+  <article class="panel availability-panel">
+    <div class="panel-title">
+      <div>
+        <h2>@DocenteSeleccionado.Apellidos, @DocenteSeleccionado.Nombres</h2>
+        <p>@DocenteSeleccionado.TipoNombre · @CarreraPrincipal</p>
+      </div>
+      <div class="availability-statuses">
+        @if (puedeCapturar)
+        {
+          <span class="autosave-status @(cambiosPendientes ? "has-pending" : "is-saved")">
+            @(guardando ? "Guardando…" : estadoGuardado)
+          </span>
+        }
+        <span class="status @(modelo.Validada ? "status-active" : "status-closed")">
+          @(modelo.Validada ? "Validada" : "Pendiente de validación")
+        </span>
+      </div>
+    </div>
+
+    @if (DocenteSeleccionado.Tipo == 1)
+    {
+      <h3>Jornada semanal de permanencia</h3>
+      <p class="form-help">
+        Distribuye exactamente 40 horas de lunes a sábado. Cada día puede tener hasta
+        8 horas; activa únicamente los días en que el docente tendrá permanencia.
+        Las horas del sábado forman parte de las 40 horas semanales.
+      </p>
+      <div class="workday-grid">
+        @foreach (var dia in Dias)
+        {
+          var jornada = BuscarJornada(dia.Id);
+          var jornadaCaptura = jornada ?? JornadaPredeterminada(dia.Id);
+          var diaActivo = jornada is not null;
+          var horasDia = diaActivo ? CalcularHoras(jornadaCaptura) : 0;
+          <div class="workday-row @(diaActivo ? "is-active" : "is-day-off")">
+            <strong>@dia.Nombre</strong>
+            <button type="button"
+                    class="workday-status-toggle @(diaActivo ? "is-active" : null)"
+                    aria-pressed="@diaActivo"
+                    disabled="@(!puedeCapturar)"
+                    @onclick="() => AlternarJornada(dia.Id)">
+              @(diaActivo ? "Con permanencia" : "Día libre")
+            </button>
+            <label>
+              Entrada
+              <input type="time" min="07:00" max="17:00"
+                     disabled="@(!diaActivo || !puedeCapturar)"
+                     value="@jornadaCaptura.HoraInicio.ToString("HH:mm", CultureInfo.InvariantCulture)"
+                     @onchange="e => CambiarHora(dia.Id, true, e.Value?.ToString())" />
+            </label>
+            <label>
+              Salida
+              <input type="time" min="08:00" max="18:00"
+                     disabled="@(!diaActivo || !puedeCapturar)"
+                     value="@jornadaCaptura.HoraFin.ToString("HH:mm", CultureInfo.InvariantCulture)"
+                     @onchange="e => CambiarHora(dia.Id, false, e.Value?.ToString())" />
+            </label>
+            <span>@FormatearHoras(horasDia)</span>
+          </div>
+        }
+      </div>
+      <div class="workweek-total @(TotalHorasJornada == 40 ? "is-valid" : "is-invalid")">
+        <span>Total semanal</span>
+        <strong>@FormatearHoras(TotalHorasJornada) / 40 horas</strong>
+      </div>
+    }
+
+    @if (DocenteSeleccionado.Tipo == 2)
+    {
+      <h3>Disponibilidad para clases (08:00–16:00)</h3>
+      <p class="form-help">
+        Selecciona las horas reales del docente. Puedes pulsar cualquier parte de la celda;
+        cada cambio se guarda automáticamente. El generador dará prioridad a asignatura y
+        compactará sus clases para reducir días y huecos.
+      </p>
+      <div class="availability-table-wrap">
+        <table class="availability-table">
+          <thead>
+            <tr>
+              <th scope="col">Hora</th>
+              @foreach (var dia in Dias)
+              {
+                <th scope="col">@dia.Nombre</th>
+              }
+            </tr>
+          </thead>
+          <tbody>
+            @for (byte bloque = 1; bloque <= 8; bloque++)
+            {
+              var bloqueLocal = bloque;
+              <tr>
+                <th scope="row">@Horas[bloqueLocal - 1]</th>
+                @foreach (var dia in Dias)
+                {
+                  var diaLocal = dia;
+                  var seleccionada = EstaDisponible(diaLocal.Id, bloqueLocal);
+                  <td class="availability-cell-container">
+                    <button type="button"
+                            class="availability-cell @(seleccionada ? "is-selected" : null)"
+                            aria-pressed="@seleccionada"
+                            disabled="@(!puedeCapturar)"
+                            title="@($"{diaLocal.Nombre}, {Horas[bloqueLocal - 1]}")"
+                            @onclick="() => AlternarBloque(diaLocal.Id, bloqueLocal)">
+                      <span class="availability-check" aria-hidden="true">✓</span>
+                      <span class="visually-hidden">
+                        @(seleccionada ? "Disponible" : "No disponible")
+                      </span>
+                    </button>
+                  </td>
+                }
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+    <div class="validation-actions">
+      <div>
+        @if (puedeCapturar)
+        {
+          <strong>Guardado automático</strong>
+          <p>Cada cambio se conserva como borrador y deja la disponibilidad pendiente de validación.</p>
+        }
+        else
+        {
+          <strong>Validación de Jefatura</strong>
+          <p>Validar confirma que la captura está completa y autoriza su uso en las siguientes etapas.</p>
+        }
+      </div>
+      @if (puedeValidar && !modelo.Validada && !string.IsNullOrWhiteSpace(modelo.RowVersion))
+      {
+        <button type="button"
+                class="btn-secondary"
+                disabled="@procesando"
+                @onclick="Validar">
+          @(procesando ? "Validando…" : "Validar disponibilidad")
+        </button>
+      }
+    </div>
+  </article>
+}
+
+@code {
+  private static readonly (byte Id, string Nombre)[] Dias =
+  [
+    (1, "Lunes"), (2, "Martes"), (3, "Miércoles"),
+    (4, "Jueves"), (5, "Viernes"), (6, "Sábado")
+  ];
+  private static readonly string[] Horas =
+  [
+    "08–09", "09–10", "10–11", "11–12",
+    "12–13", "13–14", "14–15", "15–16"
+  ];
+
+  private readonly SemaphoreSlim guardadoGate = new(1, 1);
+  private List<DocenteDto> docentes = [];
+  private List<PeriodoDto> periodos = [];
+  private DisponibilidadDocenteDto? modelo;
+  private Guid docenteId;
+  private Guid periodoId;
+  private bool cargando = true;
+  private bool procesando;
+  private bool guardando;
+  private bool cambiosPendientes;
+  private bool puedeCapturar;
+  private bool puedeValidar;
+  private bool cargandoPendientes;
+  private int revisionCaptura;
+  private List<PendienteValidacion> pendientes = [];
+  private string estadoGuardado = "Sin cambios";
+  private string? mensaje;
+  private string? error;
+
+  private IEnumerable<(byte Id, string Nombre)> DiasLaborales => Dias.Take(5);
+  private double TotalHorasJornada =>
+    modelo?.Jornadas
+      .Where(x => !x.EsSemanaSabatina)
+      .Sum(CalcularHoras) ?? 0;
+  private DocenteDto? DocenteSeleccionado => docentes.SingleOrDefault(x => x.Id == docenteId);
+  private string CarreraPrincipal =>
+    DocenteSeleccionado?.Carreras.SingleOrDefault(x => x.EsPrincipal)?.Nombre
+    ?? "Sin carrera de adscripción";
+
+  protected override async Task OnInitializedAsync()
+  {
+    try
+    {
+      var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+      puedeCapturar = auth.User.IsInRole("Administrador") || auth.User.IsInRole("Secretaría");
+      puedeValidar = auth.User.IsInRole("Administrador") || auth.User.IsInRole("Jefatura");
+      var docentesTask = DocentesApi.ListarAsync();
+      var periodosTask = DocentesApi.ListarPeriodosDisponiblesAsync();
+      await Task.WhenAll(docentesTask, periodosTask);
+      docentes = (await docentesTask).ToList();
+      periodos = (await periodosTask).Where(x => x.Estado == 2).ToList();
+      if (puedeValidar)
+      {
+        await CargarPendientes();
+      }
+    }
+    catch (Exception ex)
+    {
+      error = $"No fue posible cargar los catálogos: {ex.Message}";
+    }
+    finally
+    {
+      cargando = false;
+    }
+  }
+
+  private async Task CargarPendientes()
+  {
+    if (!puedeValidar)
+    {
+      return;
+    }
+
+    var periodoActivo = periodos.SingleOrDefault();
+    if (periodoActivo is null)
+    {
+      pendientes = [];
+      return;
+    }
+
+    cargandoPendientes = true;
+    try
+    {
+      var tareas = docentes
+        .Where(x => x.Activo)
+        .Select(async docente =>
+        {
+          try
+          {
+            var disponibilidad = await DocentesApi.ObtenerDisponibilidadAsync(
+              docente.Id,
+              periodoActivo.Id);
+            return disponibilidad is { Id: not null, Validada: false }
+              ? new PendienteValidacion(docente, disponibilidad)
+              : null;
+          }
+          catch
+          {
+            return null;
+          }
+        });
+
+      pendientes = (await Task.WhenAll(tareas))
+        .OfType<PendienteValidacion>()
+        .OrderBy(x => x.Docente.Apellidos)
+        .ThenBy(x => x.Docente.Nombres)
+        .ToList();
+    }
+    finally
+    {
+      cargandoPendientes = false;
+    }
+  }
+
+  private async Task AbrirPendiente(PendienteValidacion pendiente)
+  {
+    periodoId = pendiente.Disponibilidad.PeriodoId;
+    docenteId = pendiente.Docente.Id;
+    await CargarDisponibilidad();
+  }
+
+  private static string CarreraAdscripcion(DocenteDto docente) =>
+    docente.Carreras.SingleOrDefault(x => x.EsPrincipal)?.Nombre
+    ?? "Sin carrera de adscripción";
+
+  private async Task CargarDisponibilidad()
+  {
+    revisionCaptura++;
+    mensaje = null;
+    error = null;
+    modelo = null;
+    cambiosPendientes = false;
+    estadoGuardado = "Sin cambios";
+    if (docenteId == Guid.Empty || periodoId == Guid.Empty)
+    {
+      return;
+    }
+
+    cargando = true;
+    try
+    {
+      modelo = await DocentesApi.ObtenerDisponibilidadAsync(docenteId, periodoId);
+      if (modelo is not null
+          && modelo.Id is null
+          && modelo.TipoDocente == 1
+          && modelo.Jornadas.Count == 0)
+      {
+        modelo = modelo with
+        {
+          Jornadas = DiasLaborales
+            .Select(x => JornadaPredeterminada(x.Id))
+            .ToArray()
+        };
+      }
+      estadoGuardado = modelo?.Id is null ? "Aún sin guardar" : "Guardado";
+    }
+    catch (Exception ex)
+    {
+      error = $"No fue posible cargar la disponibilidad: {ex.Message}";
+    }
+    finally
+    {
+      cargando = false;
+    }
+  }
+
+  private JornadaDocenteDto? BuscarJornada(byte dia) =>
+    modelo?.Jornadas.SingleOrDefault(
+      x => x.Dia == dia && !x.EsSemanaSabatina);
+
+  private async Task CambiarHora(
+    byte dia,
+    bool inicio,
+    string? valor)
+  {
+    if (modelo is null
+        || !TimeOnly.TryParse(
+          valor,
+          CultureInfo.InvariantCulture,
+          DateTimeStyles.None,
+          out var hora))
+    {
+      return;
+    }
+
+    var jornadas = modelo.Jornadas
+      .Where(x => !x.EsSemanaSabatina)
+      .ToList();
+    var indice = jornadas.FindIndex(x => x.Dia == dia);
+    if (indice < 0)
+    {
+      return;
+    }
+
+    var actual = jornadas[indice];
+    jornadas[indice] = inicio
+      ? actual with { HoraInicio = hora }
+      : actual with { HoraFin = hora };
+    modelo = modelo with { Jornadas = jornadas, Validada = false };
+    await GuardarAutomaticamente();
+  }
+
+  private async Task AlternarJornada(byte dia)
+  {
+    if (modelo is null)
+    {
+      return;
+    }
+
+    var jornadas = modelo.Jornadas
+      .Where(x => !x.EsSemanaSabatina)
+      .ToList();
+    var eliminadas = jornadas.RemoveAll(x => x.Dia == dia);
+    if (eliminadas == 0)
+    {
+      jornadas.Add(JornadaPredeterminada(dia));
+    }
+
+    modelo = modelo with
+    {
+      Jornadas = jornadas.OrderBy(x => x.Dia).ToArray(),
+      Validada = false
+    };
+    await GuardarAutomaticamente();
+  }
+
+  private static JornadaDocenteDto JornadaPredeterminada(byte dia) =>
+    new(
+      dia,
+      new TimeOnly(8, 0),
+      new TimeOnly(16, 0),
+      EsSemanaSabatina: false);
+
+  private static double CalcularHoras(JornadaDocenteDto jornada) =>
+    Math.Max(0, (jornada.HoraFin - jornada.HoraInicio).TotalHours);
+
+  private static string FormatearHoras(double horas) =>
+    horas == 1 ? "1 hora" : $"{horas:0.##} horas";
+
+  private bool EstaDisponible(byte dia, byte bloque) =>
+    modelo?.Bloques.Any(x => x.Dia == dia && x.Bloque == bloque) == true;
+
+  private async Task AlternarBloque(byte dia, byte bloque)
+  {
+    if (modelo is null)
+    {
+      return;
+    }
+
+    var bloques = modelo.Bloques.ToList();
+    var estabaDisponible = bloques.RemoveAll(
+      x => x.Dia == dia && x.Bloque == bloque) > 0;
+    if (!estabaDisponible)
+    {
+      bloques.Add(new DisponibilidadBloqueDto(dia, bloque, false));
+    }
+
+    modelo = modelo with { Bloques = bloques, Validada = false };
+    await GuardarAutomaticamente();
+  }
+
+  private async Task GuardarAutomaticamente()
+  {
+    if (!puedeCapturar || modelo is null)
+    {
+      return;
+    }
+
+    var revision = ++revisionCaptura;
+    var docenteGuardado = docenteId;
+    var periodoGuardado = periodoId;
+    cambiosPendientes = true;
+    estadoGuardado = "Cambios pendientes";
+    mensaje = null;
+    error = null;
+
+    await guardadoGate.WaitAsync();
+    try
+    {
+      if (revision != revisionCaptura
+          || docenteGuardado != docenteId
+          || periodoGuardado != periodoId
+          || modelo is null)
+      {
+        return;
+      }
+
+      guardando = true;
+      estadoGuardado = "Guardando…";
+      await InvokeAsync(StateHasChanged);
+
+      var captura = modelo;
+      var request = new GuardarDisponibilidadDocenteRequest
+      {
+        PeriodoId = periodoGuardado,
+        Jornadas = captura.TipoDocente == 1
+          ? captura.Jornadas.Where(x => !x.EsSemanaSabatina).ToList()
+          : [],
+        Bloques = captura.TipoDocente == 2
+          ? captura.Bloques.ToList()
+          : [],
+        RowVersion = captura.RowVersion
+      };
+      var resultado = await DocentesApi.GuardarDisponibilidadAsync(
+        docenteGuardado,
+        periodoGuardado,
+        request);
+
+      if (docenteGuardado != docenteId
+          || periodoGuardado != periodoId
+          || modelo is null)
+      {
+        return;
+      }
+
+      if (!resultado.Correcto || resultado.Disponibilidad is null)
+      {
+        error = resultado.Mensaje;
+        estadoGuardado = "No guardado";
+        cambiosPendientes = true;
+        return;
+      }
+
+      if (revision == revisionCaptura)
+      {
+        modelo = resultado.Disponibilidad;
+        cambiosPendientes = false;
+        estadoGuardado = "Guardado";
+      }
+      else
+      {
+        modelo = modelo with
+        {
+          Id = resultado.Disponibilidad.Id,
+          RowVersion = resultado.Disponibilidad.RowVersion,
+          Validada = false,
+          FechaValidacion = null
+        };
+      }
+    }
+    catch (Exception ex)
+    {
+      error = $"No fue posible guardar automáticamente: {ex.Message}";
+      estadoGuardado = "No guardado";
+      cambiosPendientes = true;
+    }
+    finally
+    {
+      guardando = false;
+      guardadoGate.Release();
+      await InvokeAsync(StateHasChanged);
+    }
+  }
+
+  private async Task Validar()
+  {
+    if (modelo is null)
+    {
+      error = "Selecciona una disponibilidad antes de validarla.";
+      return;
+    }
+
+    procesando = true;
+    mensaje = null;
+    error = null;
+    try
+    {
+      if (guardando)
+      {
+        await guardadoGate.WaitAsync();
+        guardadoGate.Release();
+      }
+
+      if (cambiosPendientes && puedeCapturar)
+      {
+        await GuardarAutomaticamente();
+      }
+
+      if (modelo is null || cambiosPendientes || string.IsNullOrWhiteSpace(modelo.RowVersion))
+      {
+        error = "No fue posible confirmar el borrador. Corrige el error de guardado antes de validar.";
+        return;
+      }
+
+      var resultado = await DocentesApi.ValidarDisponibilidadAsync(modelo);
+      if (!resultado.Correcto || resultado.Disponibilidad is null)
+      {
+        error = resultado.Mensaje;
+        return;
+      }
+      modelo = resultado.Disponibilidad;
+      estadoGuardado = "Guardado";
+      cambiosPendientes = false;
+      mensaje = "Disponibilidad validada correctamente.";
+      pendientes.RemoveAll(x =>
+        x.Docente.Id == modelo.DocenteId
+        && x.Disponibilidad.PeriodoId == modelo.PeriodoId);
+    }
+    catch (Exception ex)
+    {
+      error = $"No fue posible validar la disponibilidad: {ex.Message}";
+    }
+    finally
+    {
+      procesando = false;
+    }
+  }
+
+  private sealed record PendienteValidacion(
+    DocenteDto Docente,
+    DisponibilidadDocenteDto Disponibilidad);
+}

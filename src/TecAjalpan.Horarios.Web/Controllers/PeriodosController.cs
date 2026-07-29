@@ -6,18 +6,22 @@ using TecAjalpan.Horarios.Application.Security;
 using TecAjalpan.Horarios.Contracts.Periodos;
 using TecAjalpan.Horarios.Domain.Entities;
 using TecAjalpan.Horarios.Domain.Enums;
+using TecAjalpan.Horarios.Infrastructure.Persistence;
 
 namespace TecAjalpan.Horarios.Web.Controllers;
 
 [ApiController]
 [Route("api/periodos")]
 [Authorize(Policy = Politicas.AdministrarPeriodos)]
-public sealed class PeriodosController(IPeriodoRepository repository) : ControllerBase
+public sealed class PeriodosController(
+    IPeriodoRepository repository,
+    ApplicationDbContext dbContext) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<PeriodoDto>>> Listar(
         CancellationToken cancellationToken)
     {
+        await CerrarPeriodosVencidosAsync(cancellationToken);
         var periodos = await repository.ListarAsync(cancellationToken);
         return Ok(periodos.Select(Mapear).ToArray());
     }
@@ -27,6 +31,7 @@ public sealed class PeriodosController(IPeriodoRepository repository) : Controll
         Guid id,
         CancellationToken cancellationToken)
     {
+        await CerrarPeriodosVencidosAsync(cancellationToken);
         var periodo = await repository.ObtenerAsync(id, cancellationToken);
         return periodo is null ? NotFound() : Ok(Mapear(periodo));
     }
@@ -36,6 +41,18 @@ public sealed class PeriodosController(IPeriodoRepository repository) : Controll
         GuardarPeriodoRequest request,
         CancellationToken cancellationToken)
     {
+        await CerrarPeriodosVencidosAsync(cancellationToken);
+
+        var errorEstado = await ValidarActivacionAsync(
+            request.Estado,
+            null,
+            request.FechaFin,
+            cancellationToken);
+        if (errorEstado is not null)
+        {
+            return Conflict(new { mensaje = errorEstado });
+        }
+
         if (!EsAdministrador() && request.Semanas != 16)
         {
             return StatusCode(StatusCodes.Status403Forbidden, new
@@ -54,7 +71,10 @@ public sealed class PeriodosController(IPeriodoRepository repository) : Controll
         }
         catch (DbUpdateException)
         {
-            return Conflict(new { mensaje = "Ya existe un periodo con ese nombre." });
+            var mensaje = request.Estado == (byte)EstadoPeriodo.Activo
+                ? "Ya existe un periodo activo. Ciérralo antes de activar otro."
+                : "Ya existe un periodo con ese nombre.";
+            return Conflict(new { mensaje });
         }
 
         return CreatedAtAction(nameof(Obtener), new { id = periodo.Id }, Mapear(periodo));
@@ -66,6 +86,7 @@ public sealed class PeriodosController(IPeriodoRepository repository) : Controll
         GuardarPeriodoRequest request,
         CancellationToken cancellationToken)
     {
+        await CerrarPeriodosVencidosAsync(cancellationToken);
         var periodo = await repository.ObtenerAsync(id, cancellationToken);
         if (periodo is null)
         {
@@ -98,6 +119,16 @@ public sealed class PeriodosController(IPeriodoRepository repository) : Controll
             });
         }
 
+        var errorEstado = await ValidarActivacionAsync(
+            request.Estado,
+            periodo.Id,
+            request.FechaFin,
+            cancellationToken);
+        if (errorEstado is not null)
+        {
+            return Conflict(new { mensaje = errorEstado });
+        }
+
         Aplicar(request, periodo);
 
         try
@@ -113,7 +144,10 @@ public sealed class PeriodosController(IPeriodoRepository repository) : Controll
         }
         catch (DbUpdateException)
         {
-            return Conflict(new { mensaje = "Ya existe un periodo con ese nombre." });
+            var mensaje = request.Estado == (byte)EstadoPeriodo.Activo
+                ? "Ya existe un periodo activo. Ciérralo antes de activar otro."
+                : "Ya existe un periodo con ese nombre.";
+            return Conflict(new { mensaje });
         }
 
         return Ok(Mapear(periodo));
@@ -163,6 +197,55 @@ public sealed class PeriodosController(IPeriodoRepository repository) : Controll
         }
 
         return Ok(Mapear(periodo));
+    }
+
+    private async Task CerrarPeriodosVencidosAsync(
+        CancellationToken cancellationToken)
+    {
+        var hoy = DateOnly.FromDateTime(DateTime.Today);
+        var vencidos = await dbContext.Periodos
+            .Where(x => !x.Eliminado
+                && x.Estado == EstadoPeriodo.Activo
+                && x.FechaFin < hoy)
+            .ToArrayAsync(cancellationToken);
+        if (vencidos.Length == 0)
+        {
+            return;
+        }
+
+        foreach (var vencido in vencidos)
+        {
+            vencido.Estado = EstadoPeriodo.Cerrado;
+        }
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<string?> ValidarActivacionAsync(
+        byte estado,
+        Guid? periodoId,
+        DateOnly fechaFin,
+        CancellationToken cancellationToken)
+    {
+        if (estado != (byte)EstadoPeriodo.Activo)
+        {
+            return null;
+        }
+
+        var hoy = DateOnly.FromDateTime(DateTime.Today);
+        if (fechaFin < hoy)
+        {
+            return "No se puede activar un periodo cuya fecha de fin ya terminó.";
+        }
+
+        var existeOtroActivo = await dbContext.Periodos
+            .AsNoTracking()
+            .AnyAsync(x => !x.Eliminado
+                && x.Estado == EstadoPeriodo.Activo
+                && (!periodoId.HasValue || x.Id != periodoId.Value),
+                cancellationToken);
+        return existeOtroActivo
+            ? "Ya existe un periodo activo. Ciérralo antes de activar otro."
+            : null;
     }
 
     private static void Aplicar(GuardarPeriodoRequest request, Periodo periodo)

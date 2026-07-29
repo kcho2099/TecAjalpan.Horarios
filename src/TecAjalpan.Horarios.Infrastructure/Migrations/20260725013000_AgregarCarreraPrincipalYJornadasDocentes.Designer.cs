@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TecAjalpan.Horarios.Infrastructure.Persistence;
@@ -11,9 +12,10 @@ using TecAjalpan.Horarios.Infrastructure.Persistence;
 namespace TecAjalpan.Horarios.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260725013000_AgregarCarreraPrincipalYJornadasDocentes")]
+    partial class AgregarCarreraPrincipalYJornadasDocentes
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -840,9 +842,6 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                     b.Property<bool>("Eliminado")
                         .HasColumnType("bit");
 
-                    b.Property<bool>("EsSemanaSabatina")
-                        .HasColumnType("bit");
-
                     b.Property<DateTime>("FechaCrea")
                         .HasColumnType("datetime2");
 
@@ -876,7 +875,7 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("DisponibilidadDocenteId", "Dia", "EsSemanaSabatina")
+                    b.HasIndex("DisponibilidadDocenteId", "Dia")
                         .IsUnique()
                         .HasFilter("[Eliminado] = 0");
 
@@ -1592,11 +1591,6 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("Estado")
-                        .IsUnique()
-                        .HasDatabaseName("UX_Periodos_UnicoActivo")
-                        .HasFilter("[Estado] = 2 AND [Eliminado] = 0");
 
                     b.HasIndex("Nombre")
                         .IsUnique();

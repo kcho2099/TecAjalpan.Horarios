@@ -20,8 +20,10 @@ public sealed class ApplicationDbContext(
     public DbSet<Grupo> Grupos => Set<Grupo>();
     public DbSet<OfertaMateria> OfertasMaterias => Set<OfertaMateria>();
     public DbSet<Docente> Docentes => Set<Docente>();
+    public DbSet<DocenteCarrera> DocentesCarreras => Set<DocenteCarrera>();
     public DbSet<DisponibilidadDocente> DisponibilidadesDocentes => Set<DisponibilidadDocente>();
     public DbSet<DisponibilidadBloque> DisponibilidadesBloques => Set<DisponibilidadBloque>();
+    public DbSet<JornadaDocente> JornadasDocentes => Set<JornadaDocente>();
     public DbSet<Espacio> Espacios => Set<Espacio>();
     public DbSet<DisponibilidadEspacio> DisponibilidadesEspacios => Set<DisponibilidadEspacio>();
     public DbSet<CargaAcademica> CargasAcademicas => Set<CargaAcademica>();
@@ -126,6 +128,10 @@ public sealed class ApplicationDbContext(
             entity.ToTable("Periodos", "Academico");
             entity.Property(x => x.Nombre).HasMaxLength(120);
             entity.HasIndex(x => x.Nombre).IsUnique();
+            entity.HasIndex(x => x.Estado)
+                .IsUnique()
+                .HasDatabaseName("UX_Periodos_UnicoActivo")
+                .HasFilter("[Estado] = 2 AND [Eliminado] = 0");
         });
         modelBuilder.Entity<PeriodoCarrera>(entity =>
         {
@@ -164,6 +170,24 @@ public sealed class ApplicationDbContext(
             entity.HasIndex(x => x.NumeroTrabajador).IsUnique();
             entity.HasIndex(x => x.Correo).IsUnique();
         });
+        modelBuilder.Entity<DocenteCarrera>(entity =>
+        {
+            entity.ToTable("DocentesCarreras", "Recursos");
+            entity.HasIndex(x => new { x.DocenteId, x.CarreraId })
+                .IsUnique()
+                .HasFilter("[Eliminado] = 0");
+            entity.HasIndex(x => x.DocenteId)
+                .IsUnique()
+                .HasFilter("[EsPrincipal] = 1 AND [Eliminado] = 0");
+            entity.HasOne(x => x.Docente)
+                .WithMany(x => x.Carreras)
+                .HasForeignKey(x => x.DocenteId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.Carrera)
+                .WithMany()
+                .HasForeignKey(x => x.CarreraId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
         modelBuilder.Entity<DisponibilidadDocente>(entity =>
         {
             entity.ToTable("DisponibilidadesDocentes", "Recursos");
@@ -173,6 +197,22 @@ public sealed class ApplicationDbContext(
         {
             entity.ToTable("DisponibilidadesBloques", "Recursos");
             entity.HasIndex(x => new { x.DisponibilidadDocenteId, x.Dia, x.Bloque }).IsUnique();
+        });
+        modelBuilder.Entity<JornadaDocente>(entity =>
+        {
+            entity.ToTable("JornadasDocentes", "Recursos");
+            entity.HasIndex(x => new
+                {
+                    x.DisponibilidadDocenteId,
+                    x.Dia,
+                    x.EsSemanaSabatina
+                })
+                .IsUnique()
+                .HasFilter("[Eliminado] = 0");
+            entity.HasOne(x => x.DisponibilidadDocente)
+                .WithMany(x => x.Jornadas)
+                .HasForeignKey(x => x.DisponibilidadDocenteId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
         modelBuilder.Entity<Espacio>(entity =>
         {

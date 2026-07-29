@@ -147,8 +147,15 @@ internal sealed class AuditoriaSaveChangesInterceptor(
 
     private static string ObtenerAccion(CambioPendiente cambio)
     {
-        if (cambio.Entry.Entity is UsuarioCarrera)
+        if (cambio.Entry.Entity is UsuarioCarrera or DocenteCarrera)
         {
+            if (cambio.Entry.Entity is DocenteCarrera
+                && cambio.EstadoOriginal == EntityState.Modified
+                && PropiedadCambio(cambio.Entry, nameof(DocenteCarrera.EsPrincipal)))
+            {
+                return "CambioCarreraPrincipal";
+            }
+
             return cambio.EstadoOriginal == EntityState.Deleted
                 ? "RetiroCarrera"
                 : "AsignacionCarrera";
@@ -252,6 +259,7 @@ internal sealed class AuditoriaSaveChangesInterceptor(
     {
         UsuarioAplicacion => "Usuario",
         UsuarioCarrera => "UsuarioCarrera",
+        DocenteCarrera => "DocenteCarrera",
         IdentityUserRole<string> => "UsuarioRol",
         _ => entidad.GetType().Name
     };
