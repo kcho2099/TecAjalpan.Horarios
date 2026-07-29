@@ -1774,9 +1774,7 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CarreraId");
-
-                    b.HasIndex("Clave")
+                    b.HasIndex("CarreraId", "Clave")
                         .IsUnique()
                         .HasFilter("[Eliminado] = 0");
 
