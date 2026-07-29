@@ -61,17 +61,17 @@ public sealed class GuardarMateriaRequest : IValidatableObject
     [Required, StringLength(200, MinimumLength = 3)]
     public string Nombre { get; set; } = string.Empty;
 
-    [Range(1, 8, ErrorMessage = "El semestre debe estar entre 1 y 8.")]
-    public byte Semestre { get; set; } = 1;
+    [Range(1, 9, ErrorMessage = "El semestre debe estar entre 1 y 9.")]
+    public int Semestre { get; set; } = 1;
 
     [Range(0, 30)]
-    public byte Creditos { get; set; }
+    public int Creditos { get; set; }
 
     [Range(0, 20)]
-    public byte HorasTeoricas { get; set; }
+    public int HorasTeoricas { get; set; }
 
     [Range(0, 20)]
-    public byte HorasPracticas { get; set; }
+    public int HorasPracticas { get; set; }
 
     public List<Guid> ModalidadIds { get; set; } = [];
     public string? RowVersion { get; set; }
