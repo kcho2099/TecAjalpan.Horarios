@@ -1462,3 +1462,55 @@ main {
     padding-top: 2px;
   }
 }
+
+.availability-statuses {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.panel-title .autosave-status {
+  color: #166534;
+  background: #e8f7ed;
+}
+
+.panel-title .autosave-status.has-pending {
+  color: #8a4b0f;
+  background: #fff2d8;
+}
+
+.availability-cell:disabled,
+.workday-status-toggle:disabled {
+  cursor: not-allowed;
+  opacity: .72;
+}
+
+.validation-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-top: 26px;
+  padding-top: 20px;
+  border-top: 1px solid var(--borde);
+}
+
+.validation-actions strong,
+.validation-actions p {
+  display: block;
+}
+
+.validation-actions p {
+  margin: 4px 0 0;
+  color: var(--gris);
+  font-size: 13px;
+}
+
+@media (max-width: 620px) {
+  .availability-statuses,
+  .validation-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
