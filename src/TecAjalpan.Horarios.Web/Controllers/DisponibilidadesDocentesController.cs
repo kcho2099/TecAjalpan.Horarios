@@ -121,7 +121,10 @@ public sealed class DisponibilidadesDocentesController(
                 disponibilidad!,
                 request.Jornadas,
                 cancellationToken);
-            SincronizarBloques(disponibilidad!, request.Bloques);
+            await ReemplazarBloquesAsync(
+                disponibilidad!,
+                request.Bloques,
+                cancellationToken);
 
             disponibilidad!.Validada = false;
             disponibilidad.FechaValidacion = null;
@@ -315,21 +318,10 @@ public sealed class DisponibilidadesDocentesController(
         }
         disponibilidad.Jornadas.Clear();
 
-        var fecha = DateTime.UtcNow;
-        var usuario = User.FindFirstValue(ClaimTypes.NameIdentifier)
-            ?? User.Identity?.Name
-            ?? "sistema";
-
         await dbContext.JornadasDocentes
-            .Where(x =>
-                x.DisponibilidadDocenteId == disponibilidad.Id
-                && !x.Eliminado)
-            .ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(x => x.Eliminado, true)
-                    .SetProperty(x => x.FechaElimina, fecha)
-                    .SetProperty(x => x.UsuarioElimina, usuario),
-                cancellationToken);
+            .IgnoreQueryFilters()
+            .Where(x => x.DisponibilidadDocenteId == disponibilidad.Id)
+            .ExecuteDeleteAsync(cancellationToken);
 
         foreach (var nueva in solicitadas.Select(x => new JornadaDocente
         {
@@ -343,30 +335,29 @@ public sealed class DisponibilidadesDocentesController(
         }
     }
 
-    private void SincronizarBloques(
+    private async Task ReemplazarBloquesAsync(
         DisponibilidadDocente disponibilidad,
-        IEnumerable<DisponibilidadBloqueDto> solicitados)
+        IReadOnlyCollection<DisponibilidadBloqueDto> solicitados,
+        CancellationToken cancellationToken)
     {
-        var nuevos = solicitados.ToDictionary(x => (x.Dia, x.Bloque));
         foreach (var actual in disponibilidad.Bloques.ToArray())
         {
-            if (!nuevos.Remove(((byte)actual.Dia, actual.Bloque), out var solicitado))
-            {
-                dbContext.DisponibilidadesBloques.Remove(actual);
-                continue;
-            }
-            actual.Disponible = true;
-            actual.Preferente = solicitado.Preferente;
+            dbContext.Entry(actual).State = EntityState.Detached;
         }
+        disponibilidad.Bloques.Clear();
 
-        foreach (var nuevo in nuevos.Values
-            .Select(x => new DisponibilidadBloque
-            {
-                Dia = (DiaAcademico)x.Dia,
-                Bloque = x.Bloque,
-                Disponible = true,
-                Preferente = x.Preferente
-            }))
+        await dbContext.DisponibilidadesBloques
+            .IgnoreQueryFilters()
+            .Where(x => x.DisponibilidadDocenteId == disponibilidad.Id)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        foreach (var nuevo in solicitados.Select(x => new DisponibilidadBloque
+        {
+            Dia = (DiaAcademico)x.Dia,
+            Bloque = x.Bloque,
+            Disponible = true,
+            Preferente = x.Preferente
+        }))
         {
             disponibilidad.Bloques.Add(nuevo);
         }
