@@ -1219,8 +1219,6 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ReticulaId");
-
                     b.HasIndex("ReticulaId", "Clave")
                         .IsUnique()
                         .HasFilter("[Eliminado] = 0");
