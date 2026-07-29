@@ -1181,7 +1181,13 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                     b.Property<DateTime?>("FechaModifica")
                         .HasColumnType("datetime2");
 
+                    b.Property<byte>("HorasPracticas")
+                        .HasColumnType("tinyint");
+
                     b.Property<byte>("HorasSemanales")
+                        .HasColumnType("tinyint");
+
+                    b.Property<byte>("HorasTeoricas")
                         .HasColumnType("tinyint");
 
                     b.Property<string>("Nombre")
@@ -1213,13 +1219,64 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Clave")
+                    b.HasIndex("ReticulaId");
+
+                    b.HasIndex("ReticulaId", "Clave")
                         .IsUnique()
                         .HasFilter("[Eliminado] = 0");
 
-                    b.HasIndex("ReticulaId");
-
                     b.ToTable("Materias", "Catalogos");
+                });
+
+            modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.MateriaModalidad", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("Eliminado")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("FechaCrea")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("FechaElimina")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("FechaModifica")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("MateriaId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ModalidadId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("UsuarioCrea")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("UsuarioElimina")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("UsuarioModifica")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ModalidadId");
+
+                    b.HasIndex("MateriaId", "ModalidadId")
+                        .IsUnique()
+                        .HasFilter("[Eliminado] = 0");
+
+                    b.ToTable("MateriasModalidades", "Catalogos");
                 });
 
             modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.Modalidad", b =>
@@ -1274,7 +1331,7 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Clave")
+                    b.HasIndex("CarreraId", "Clave")
                         .IsUnique()
                         .HasFilter("[Eliminado] = 0");
 
@@ -2178,6 +2235,25 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                     b.Navigation("Reticula");
                 });
 
+            modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.MateriaModalidad", b =>
+                {
+                    b.HasOne("TecAjalpan.Horarios.Domain.Entities.Materia", "Materia")
+                        .WithMany("Modalidades")
+                        .HasForeignKey("MateriaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TecAjalpan.Horarios.Domain.Entities.Modalidad", "Modalidad")
+                        .WithMany()
+                        .HasForeignKey("ModalidadId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Materia");
+
+                    b.Navigation("Modalidad");
+                });
+
             modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.ModuloMateria", b =>
                 {
                     b.HasOne("TecAjalpan.Horarios.Domain.Entities.ModuloSabatino", "ModuloSabatino")
@@ -2206,6 +2282,11 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("ConfiguracionSabatina");
+                });
+
+            modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.Materia", b =>
+                {
+                    b.Navigation("Modalidades");
                 });
 
             modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.OfertaMateria", b =>

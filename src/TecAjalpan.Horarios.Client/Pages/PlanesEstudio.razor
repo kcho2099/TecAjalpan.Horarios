@@ -1,0 +1,174 @@
+@page "/planes-estudio"
+@attribute [Authorize(Roles = "Administrador,Secretaría,Jefatura,Subdirección Académica")]
+@inject PlanesEstudioApi Api
+@inject CarrerasApi CarrerasApi
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Planes de estudio | Horarios Tec Ajalpan</PageTitle>
+
+<div class="page-heading">
+  <div>
+    <span class="eyebrow">Configuración académica</span>
+    <h1>Planes de estudio y materias</h1>
+    <p>Configura las retículas vigentes y sus materias por semestre y modalidad.</p>
+  </div>
+  @if (esAdministrador && carreraId != Guid.Empty)
+  {
+    <button class="btn-primary" @onclick="NuevaReticula">+ Nueva retícula</button>
+  }
+</div>
+
+@if (!string.IsNullOrWhiteSpace(mensaje)) { <div class="alerta-exito">@mensaje</div> }
+@if (!string.IsNullOrWhiteSpace(error)) { <div class="alerta-error">@error</div> }
+
+<article class="panel">
+  <div class="form-grid">
+    <div class="form-field">
+      <label>Carrera</label>
+      <InputSelect @bind-Value="CarreraSeleccionada">
+        <option value="@Guid.Empty">Selecciona…</option>
+        @foreach (var c in carreras.Where(x => x.Activo))
+        {
+          <option value="@c.Id">@c.Clave — @c.Nombre</option>
+        }
+      </InputSelect>
+    </div>
+    <div class="form-field">
+      <label>Retícula</label>
+      <InputSelect @bind-Value="ReticulaSeleccionada" disabled="@(carreraId == Guid.Empty)">
+        <option value="@Guid.Empty">Selecciona…</option>
+        @foreach (var r in reticulas)
+        {
+          <option value="@r.Id">@r.Clave — @r.Nombre @(!r.Activo ? "(Inactiva)" : "")</option>
+        }
+      </InputSelect>
+    </div>
+    <div class="form-field">
+      <label>Semestre</label>
+      <InputSelect @bind-Value="SemestreSeleccionado" disabled="@(reticulaId == Guid.Empty)">
+        <option value="0">Todos</option>
+        @for (byte i = 1; i <= 8; i++) { <option value="@i">@i</option> }
+      </InputSelect>
+    </div>
+  </div>
+</article>
+
+@if (carreraId != Guid.Empty)
+{
+  <article class="panel catalogo-panel">
+    <div class="toolbar">
+      <div><strong>Retículas de la carrera</strong></div>
+      <span class="record-count">@reticulas.Count retícula(s)</span>
+    </div>
+    @if (reticulas.Count == 0)
+    {
+      <div class="empty-state compact"><h2>Sin retículas</h2><p>Registra el primer plan de estudios de esta carrera.</p></div>
+    }
+    else
+    {
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead><tr><th>Clave</th><th>Nombre</th><th>Vigencia</th><th>Estado</th>@if(esAdministrador){<th>Acciones</th>}</tr></thead>
+          <tbody>
+          @foreach (var r in reticulas)
+          {
+            <tr class="@(!r.Activo ? "row-inactive" : null)">
+              <td><strong>@r.Clave</strong></td><td>@r.Nombre</td>
+              <td>@r.InicioVigencia.ToString("dd/MM/yyyy") — @(r.FinVigencia?.ToString("dd/MM/yyyy") ?? "Vigente")</td>
+              <td><span class="status @(r.Activo ? "status-active" : "status-closed")">@(r.Activo ? "Activa" : "Inactiva")</span></td>
+              @if(esAdministrador){<td class="catalogo-actions"><button class="btn-link" @onclick="() => EditarReticula(r)">Editar</button><button class="btn-link" @onclick="() => CambiarEstadoReticula(r)">@(r.Activo ? "Desactivar" : "Activar")</button></td>}
+            </tr>
+          }
+          </tbody>
+        </table>
+      </div>
+    }
+  </article>
+}
+
+@if (reticulaId != Guid.Empty)
+{
+  <article class="panel catalogo-panel">
+    <div class="toolbar">
+      <label class="search-box"><span>Buscar materia</span><input @bind="filtro" @bind:event="oninput" placeholder="Clave o nombre…" /></label>
+      <div>
+        <span class="record-count">@MateriasFiltradas.Count() materia(s) · @MateriasFiltradas.Sum(x => x.HorasSemanales) horas</span>
+        @if(esAdministrador){<button class="btn-primary" @onclick="NuevaMateria">+ Nueva materia</button>}
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead><tr><th>Clave</th><th>Materia</th><th>Sem.</th><th>Teoría</th><th>Práctica</th><th>Total</th><th>Créditos</th><th>Modalidades</th><th>Estado</th>@if(esAdministrador){<th>Acciones</th>}</tr></thead>
+        <tbody>
+        @foreach (var m in MateriasFiltradas)
+        {
+          <tr class="@(!m.Activo ? "row-inactive" : null)">
+            <td><strong>@m.Clave</strong></td><td>@m.Nombre</td><td>@m.Semestre</td>
+            <td>@m.HorasTeoricas</td><td>@m.HorasPracticas</td><td><strong>@m.HorasSemanales</strong></td><td>@m.Creditos</td>
+            <td>@string.Join(", ", m.Modalidades.Select(x => x.Nombre))</td>
+            <td><span class="status @(m.Activo ? "status-active" : "status-closed")">@(m.Activo ? "Activa" : "Inactiva")</span></td>
+            @if(esAdministrador){<td class="catalogo-actions"><button class="btn-link" @onclick="() => EditarMateria(m)">Editar</button><button class="btn-link" @onclick="() => CambiarEstadoMateria(m)">@(m.Activo ? "Desactivar" : "Activar")</button></td>}
+          </tr>
+        }
+        </tbody>
+      </table>
+    </div>
+  </article>
+}
+
+@if (mostrarReticula)
+{
+  <div class="modal-backdrop"><section class="modal-card"><div class="modal-header"><h2>@(reticulaEditada.HasValue ? "Editar retícula" : "Nueva retícula")</h2><button class="icon-button" @onclick="() => mostrarReticula=false">×</button></div>
+    <EditForm Model="modeloReticula" OnValidSubmit="GuardarReticula"><DataAnnotationsValidator /><ValidationSummary />
+      <div class="form-grid">
+        <div class="form-field"><label>Clave</label><InputText @bind-Value="modeloReticula.Clave" /></div>
+        <div class="form-field"><label>Nombre</label><InputText @bind-Value="modeloReticula.Nombre" /></div>
+        <div class="form-field"><label>Inicio de vigencia</label><InputDate @bind-Value="modeloReticula.InicioVigencia" /></div>
+        <div class="form-field"><label>Fin de vigencia (opcional)</label><InputDate @bind-Value="modeloReticula.FinVigencia" /></div>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn-ghost" @onclick="() => mostrarReticula=false">Cancelar</button><button class="btn-primary" disabled="@procesando">Guardar retícula</button></div>
+    </EditForm>
+  </section></div>
+}
+
+@if (mostrarMateria)
+{
+  <div class="modal-backdrop"><section class="modal-card"><div class="modal-header"><h2>@(materiaEditada.HasValue ? "Editar materia" : "Nueva materia")</h2><button class="icon-button" @onclick="() => mostrarMateria=false">×</button></div>
+    <EditForm Model="modeloMateria" OnValidSubmit="GuardarMateria"><DataAnnotationsValidator /><ValidationSummary />
+      <div class="form-grid">
+        <div class="form-field"><label>Clave</label><InputText @bind-Value="modeloMateria.Clave" /></div>
+        <div class="form-field"><label>Nombre</label><InputText @bind-Value="modeloMateria.Nombre" /></div>
+        <div class="form-field"><label>Semestre</label><InputNumber @bind-Value="modeloMateria.Semestre" /></div>
+        <div class="form-field"><label>Créditos</label><InputNumber @bind-Value="modeloMateria.Creditos" /></div>
+        <div class="form-field"><label>Horas teóricas</label><InputNumber @bind-Value="modeloMateria.HorasTeoricas" /></div>
+        <div class="form-field"><label>Horas prácticas</label><InputNumber @bind-Value="modeloMateria.HorasPracticas" /></div>
+        <div class="form-field full"><label>Modalidades</label>
+          @foreach(var mod in modalidades){<label class="selection-row"><input type="checkbox" checked="@modeloMateria.ModalidadIds.Contains(mod.Id)" @onchange="e => AlternarModalidad(mod.Id, e.Value as bool? == true)" /> @mod.Nombre</label>}
+        </div>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn-ghost" @onclick="() => mostrarMateria=false">Cancelar</button><button class="btn-primary" disabled="@procesando">Guardar materia</button></div>
+    </EditForm>
+  </section></div>
+}
+
+@code {
+  private List<CarreraDto> carreras=[]; private List<ReticulaDto> reticulas=[]; private List<MateriaDto> materias=[]; private List<ModalidadPlanDto> modalidades=[];
+  private Guid carreraId, reticulaId; private byte semestre; private bool esAdministrador, procesando, mostrarReticula, mostrarMateria; private Guid? reticulaEditada, materiaEditada; private string filtro="", error="", mensaje="";
+  private GuardarReticulaRequest modeloReticula=new(); private GuardarMateriaRequest modeloMateria=new();
+  private Guid CarreraSeleccionada { get=>carreraId; set { if(carreraId==value)return; carreraId=value; reticulaId=Guid.Empty; _=CargarReticulas(); } }
+  private Guid ReticulaSeleccionada { get=>reticulaId; set { if(reticulaId==value)return; reticulaId=value; _=CargarMaterias(); } }
+  private byte SemestreSeleccionado { get=>semestre; set { semestre=value; } }
+  private IEnumerable<MateriaDto> MateriasFiltradas => materias.Where(x=>(semestre==0||x.Semestre==semestre)&&(string.IsNullOrWhiteSpace(filtro)||x.Clave.Contains(filtro,StringComparison.OrdinalIgnoreCase)||x.Nombre.Contains(filtro,StringComparison.OrdinalIgnoreCase)));
+  protected override async Task OnInitializedAsync(){var auth=await AuthenticationStateProvider.GetAuthenticationStateAsync();esAdministrador=auth.User.IsInRole("Administrador");carreras=(await CarrerasApi.ListarAsync()).ToList();modalidades=(await Api.ModalidadesAsync()).ToList();}
+  private async Task CargarReticulas(){reticulas=carreraId==Guid.Empty?[]:(await Api.ReticulasAsync(carreraId)).ToList();materias=[];StateHasChanged();}
+  private async Task CargarMaterias(){materias=reticulaId==Guid.Empty?[]:(await Api.MateriasAsync(reticulaId)).ToList();StateHasChanged();}
+  private void NuevaReticula(){reticulaEditada=null;modeloReticula=new(){CarreraId=carreraId};mostrarReticula=true;}
+  private void EditarReticula(ReticulaDto x){reticulaEditada=x.Id;modeloReticula=new(){CarreraId=x.CarreraId,Clave=x.Clave,Nombre=x.Nombre,InicioVigencia=x.InicioVigencia,FinVigencia=x.FinVigencia,RowVersion=x.RowVersion};mostrarReticula=true;}
+  private async Task GuardarReticula(){procesando=true;var r=await Api.GuardarReticulaAsync(reticulaEditada,modeloReticula);procesando=false;if(!r.Correcto){error=r.Mensaje??"";return;}mostrarReticula=false;mensaje="Retícula guardada correctamente.";await CargarReticulas();}
+  private async Task CambiarEstadoReticula(ReticulaDto x){var r=await Api.EstadoReticulaAsync(x);if(!r.Correcto){error=r.Mensaje??"";return;}await CargarReticulas();}
+  private void NuevaMateria(){materiaEditada=null;modeloMateria=new(){ReticulaId=reticulaId,Semestre=semestre==0?(byte)1:semestre};mostrarMateria=true;}
+  private void EditarMateria(MateriaDto x){materiaEditada=x.Id;modeloMateria=new(){ReticulaId=x.ReticulaId,Clave=x.Clave,Nombre=x.Nombre,Semestre=x.Semestre,Creditos=x.Creditos,HorasTeoricas=x.HorasTeoricas,HorasPracticas=x.HorasPracticas,ModalidadIds=x.Modalidades.Select(m=>m.Id).ToList(),RowVersion=x.RowVersion};mostrarMateria=true;}
+  private void AlternarModalidad(Guid id,bool activa){if(activa&&!modeloMateria.ModalidadIds.Contains(id))modeloMateria.ModalidadIds.Add(id);else if(!activa)modeloMateria.ModalidadIds.Remove(id);}
+  private async Task GuardarMateria(){procesando=true;var r=await Api.GuardarMateriaAsync(materiaEditada,modeloMateria);procesando=false;if(!r.Correcto){error=r.Mensaje??"";return;}mostrarMateria=false;mensaje="Materia guardada correctamente.";await CargarMaterias();}
+  private async Task CambiarEstadoMateria(MateriaDto x){var r=await Api.EstadoMateriaAsync(x);if(!r.Correcto){error=r.Mensaje??"";return;}await CargarMaterias();}
+}

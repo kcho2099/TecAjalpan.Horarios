@@ -15,6 +15,7 @@ public sealed class ApplicationDbContext(
     public DbSet<Modalidad> Modalidades => Set<Modalidad>();
     public DbSet<Reticula> Reticulas => Set<Reticula>();
     public DbSet<Materia> Materias => Set<Materia>();
+    public DbSet<MateriaModalidad> MateriasModalidades => Set<MateriaModalidad>();
     public DbSet<Periodo> Periodos => Set<Periodo>();
     public DbSet<PeriodoCarrera> PeriodosCarreras => Set<PeriodoCarrera>();
     public DbSet<Grupo> Grupos => Set<Grupo>();
@@ -150,12 +151,33 @@ public sealed class ApplicationDbContext(
             entity.ToTable("OfertasMaterias", "Academico");
             entity.HasIndex(x => new { x.GrupoId, x.MateriaId }).IsUnique();
         });
-        modelBuilder.Entity<Reticula>()
-            .HasOne(x => x.Carrera).WithMany(x => x.Reticulas)
-            .HasForeignKey(x => x.CarreraId).OnDelete(DeleteBehavior.Restrict);
-        modelBuilder.Entity<Materia>()
-            .HasOne(x => x.Reticula).WithMany(x => x.Materias)
-            .HasForeignKey(x => x.ReticulaId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<Reticula>(entity =>
+        {
+            entity.HasOne(x => x.Carrera).WithMany(x => x.Reticulas)
+                .HasForeignKey(x => x.CarreraId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => new { x.CarreraId, x.Clave })
+                .IsUnique()
+                .HasFilter("[Eliminado] = 0");
+        });
+        modelBuilder.Entity<Materia>(entity =>
+        {
+            entity.HasOne(x => x.Reticula).WithMany(x => x.Materias)
+                .HasForeignKey(x => x.ReticulaId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => new { x.ReticulaId, x.Clave })
+                .IsUnique()
+                .HasFilter("[Eliminado] = 0");
+        });
+        modelBuilder.Entity<MateriaModalidad>(entity =>
+        {
+            entity.ToTable("MateriasModalidades", "Catalogos");
+            entity.HasIndex(x => new { x.MateriaId, x.ModalidadId })
+                .IsUnique()
+                .HasFilter("[Eliminado] = 0");
+            entity.HasOne(x => x.Materia).WithMany(x => x.Modalidades)
+                .HasForeignKey(x => x.MateriaId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.Modalidad).WithMany()
+                .HasForeignKey(x => x.ModalidadId).OnDelete(DeleteBehavior.Restrict);
+        });
     }
 
     private static void ConfigurarRecursos(ModelBuilder modelBuilder)
@@ -418,7 +440,10 @@ public sealed class ApplicationDbContext(
             entity.ToTable(tabla, "Catalogos");
             entity.Property(x => x.Clave).HasMaxLength(30);
             entity.Property(x => x.Nombre).HasMaxLength(200);
-            entity.HasIndex(x => x.Clave).IsUnique().HasFilter("[Eliminado] = 0");
+            if (typeof(T) != typeof(Reticula) && typeof(T) != typeof(Materia))
+            {
+                entity.HasIndex(x => x.Clave).IsUnique().HasFilter("[Eliminado] = 0");
+            }
         });
     }
 }
