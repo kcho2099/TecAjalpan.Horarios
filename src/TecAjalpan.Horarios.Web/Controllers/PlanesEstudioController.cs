@@ -191,8 +191,10 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
     private static void Aplicar(GuardarMateriaRequest r, Materia e)
     {
         e.ReticulaId = r.ReticulaId; e.Clave = r.Clave.Trim().ToUpperInvariant();
-        e.Nombre = r.Nombre.Trim(); e.Semestre = r.Semestre; e.Creditos = r.Creditos;
-        e.HorasTeoricas = r.HorasTeoricas; e.HorasPracticas = r.HorasPracticas;
+        e.Nombre = r.Nombre.Trim(); e.Semestre = checked((byte)r.Semestre);
+        e.Creditos = checked((byte)r.Creditos);
+        e.HorasTeoricas = checked((byte)r.HorasTeoricas);
+        e.HorasPracticas = checked((byte)r.HorasPracticas);
         e.HorasSemanales = checked((byte)(r.HorasTeoricas + r.HorasPracticas));
     }
 
