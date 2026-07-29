@@ -1,0 +1,71 @@
+@page "/reticulas"
+@attribute [Authorize(Roles = "Administrador,Secretaría,Jefatura,Subdirección Académica")]
+@inject PlanesEstudioApi Api
+@inject CarrerasApi CarrerasApi
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Retículas | Horarios Tec Ajalpan</PageTitle>
+
+<div class="page-heading">
+  <div><span class="eyebrow">Configuración académica</span><h1>Retículas</h1><p>Administra los planes de estudio y su vigencia por carrera.</p></div>
+  @if(esAdministrador && carreraId!=Guid.Empty){<button class="btn-primary" @onclick="NuevaReticula" disabled="@Ocupado">+ Nueva retícula</button>}
+</div>
+
+@if(!string.IsNullOrWhiteSpace(mensaje)){<div class="alerta-exito">@mensaje</div>}
+@if(!string.IsNullOrWhiteSpace(error)){<div class="alerta-error">@error</div>}
+
+<article class="panel">
+  <div class="form-field">
+    <label for="carrera-reticula">Carrera</label>
+    <select id="carrera-reticula" value="@carreraId" @onchange="CambiarCarrera" disabled="@Ocupado">
+      <option value="@Guid.Empty">Selecciona…</option>
+      @foreach(var c in carreras.Where(x=>x.Activo)){<option value="@c.Id">@c.Clave — @c.Nombre</option>}
+    </select>
+  </div>
+</article>
+
+@if(carreraId==Guid.Empty)
+{
+  <article class="panel empty-state"><h2>Selecciona una carrera</h2><p>Después podrás consultar y administrar sus retículas.</p></article>
+}
+else
+{
+  <article class="panel catalogo-panel">
+    <div class="toolbar"><strong>Retículas de la carrera</strong><span class="record-count">@reticulas.Count retícula(s)</span></div>
+    @if(cargandoReticulas){<div class="empty-state compact"><h2>Cargando retículas…</h2></div>}
+    else if(reticulas.Count==0){<div class="empty-state compact"><h2>Sin retículas</h2><p>Registra el primer plan de estudios de esta carrera.</p></div>}
+    else
+    {
+      <div class="table-responsive"><table class="data-table">
+        <thead><tr><th>Clave</th><th>Nombre</th><th>Vigencia</th><th>Estado</th>@if(esAdministrador){<th>Acciones</th>}</tr></thead>
+        <tbody>@foreach(var r in reticulas){<tr class="@(!r.Activo?"row-inactive":null)"><td><strong>@r.Clave</strong></td><td>@r.Nombre</td><td>@r.InicioVigencia.ToString("dd/MM/yyyy") — @(r.FinVigencia?.ToString("dd/MM/yyyy")??"Vigente")</td><td><span class="status @(r.Activo?"status-active":"status-closed")">@(r.Activo?"Activa":"Inactiva")</span></td>@if(esAdministrador){<td class="catalogo-actions"><button class="btn-link" @onclick="()=>EditarReticula(r)" disabled="@Ocupado">Editar</button><button class="btn-link" @onclick="()=>CambiarEstadoReticula(r)" disabled="@Ocupado">@(r.Activo?"Desactivar":"Activar")</button></td>}</tr>}</tbody>
+      </table></div>
+    }
+  </article>
+}
+
+@if(mostrarReticula)
+{
+  <div class="modal-backdrop"><section class="modal-card"><div class="modal-header"><h2>@(reticulaEditada.HasValue?"Editar retícula":"Nueva retícula")</h2><button class="icon-button" @onclick="CerrarReticula" disabled="@procesando">×</button></div>
+    <EditForm Model="modeloReticula" OnValidSubmit="GuardarReticula"><DataAnnotationsValidator/><ValidationSummary/>
+      <div class="form-grid"><div class="form-field"><label>Clave</label><InputText @bind-Value="modeloReticula.Clave"/></div><div class="form-field"><label>Nombre</label><InputText @bind-Value="modeloReticula.Nombre"/></div><div class="form-field"><label>Inicio de vigencia</label><InputDate @bind-Value="modeloReticula.InicioVigencia"/></div><div class="form-field"><label>Fin de vigencia (opcional)</label><InputDate @bind-Value="modeloReticula.FinVigencia"/></div></div>
+      <div class="modal-actions"><button type="button" class="btn-ghost" @onclick="CerrarReticula" disabled="@procesando">Cancelar</button><button class="btn-primary" disabled="@procesando">@(procesando?"Guardando…":"Guardar retícula")</button></div>
+    </EditForm>
+  </section></div>
+}
+
+@if(Ocupado){<div class="loading-overlay" role="status" aria-live="polite"><div class="loading-card"><span class="loading-spinner"></span><strong>@(procesando?"Guardando cambios…":cargandoReticulas?"Cargando retículas…":"Cargando carreras…")</strong><small>Por favor espera.</small></div></div>}
+
+@code {
+  private List<CarreraDto> carreras=[]; private List<ReticulaDto> reticulas=[]; private Guid carreraId; private bool esAdministrador,cargaInicial=true,cargandoReticulas,procesando,mostrarReticula; private Guid? reticulaEditada; private string error="",mensaje=""; private GuardarReticulaRequest modeloReticula=new();
+  private bool Ocupado=>cargaInicial||cargandoReticulas||procesando;
+  protected override async Task OnInitializedAsync(){try{var auth=await AuthenticationStateProvider.GetAuthenticationStateAsync();esAdministrador=auth.User.IsInRole("Administrador");carreras=(await CarrerasApi.ListarAsync()).ToList();}catch(Exception ex){error=$"No fue posible cargar las carreras. {ex.Message}";}finally{cargaInicial=false;}}
+  private async Task CambiarCarrera(ChangeEventArgs e){carreraId=Guid.TryParse(e.Value?.ToString(),out var id)?id:Guid.Empty;reticulas=[];LimpiarMensajes();if(carreraId==Guid.Empty)return;await CargarReticulas();}
+  private async Task CargarReticulas(){cargandoReticulas=true;try{reticulas=(await Api.ReticulasAsync(carreraId)).ToList();}catch(Exception ex){error=$"No fue posible cargar las retículas. {ex.Message}";}finally{cargandoReticulas=false;}}
+  private void NuevaReticula(){LimpiarMensajes();reticulaEditada=null;modeloReticula=new(){CarreraId=carreraId};mostrarReticula=true;}
+  private void EditarReticula(ReticulaDto x){LimpiarMensajes();reticulaEditada=x.Id;modeloReticula=new(){CarreraId=x.CarreraId,Clave=x.Clave,Nombre=x.Nombre,InicioVigencia=x.InicioVigencia,FinVigencia=x.FinVigencia,RowVersion=x.RowVersion};mostrarReticula=true;}
+  private void CerrarReticula(){if(!procesando)mostrarReticula=false;}
+  private async Task GuardarReticula(){procesando=true;LimpiarMensajes();try{var r=await Api.GuardarReticulaAsync(reticulaEditada,modeloReticula);if(!r.Correcto){error=r.Mensaje??"No fue posible guardar la retícula.";return;}mostrarReticula=false;mensaje="Retícula guardada correctamente.";await CargarReticulas();}catch(Exception ex){error=$"No fue posible guardar la retícula. {ex.Message}";}finally{procesando=false;}}
+  private async Task CambiarEstadoReticula(ReticulaDto x){procesando=true;LimpiarMensajes();try{var r=await Api.EstadoReticulaAsync(x);if(!r.Correcto){error=r.Mensaje??"No fue posible cambiar el estado.";return;}mensaje=$"Retícula {(x.Activo?"desactivada":"activada")} correctamente.";await CargarReticulas();}catch(Exception ex){error=$"No fue posible cambiar el estado. {ex.Message}";}finally{procesando=false;}}
+  private void LimpiarMensajes(){error="";mensaje="";}
+}
