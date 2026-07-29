@@ -51,6 +51,51 @@
   </div>
 </article>
 
+@if (puedeValidar)
+{
+  <article class="panel validation-inbox">
+    <div class="panel-title">
+      <div>
+        <span class="eyebrow">Jefatura</span>
+        <h2>Disponibilidades pendientes de validación</h2>
+        <p>Abre una captura, revisa su distribución y confírmala para utilizarla en las siguientes etapas.</p>
+      </div>
+      <button type="button"
+              class="btn-link"
+              disabled="@cargandoPendientes"
+              @onclick="CargarPendientes">
+        @(cargandoPendientes ? "Actualizando…" : "Actualizar")
+      </button>
+    </div>
+
+    @if (cargandoPendientes)
+    {
+      <div class="table-state">Buscando disponibilidades pendientes…</div>
+    }
+    else if (pendientes.Count == 0)
+    {
+      <div class="table-state">No hay disponibilidades pendientes en el periodo activo.</div>
+    }
+    else
+    {
+      <div class="validation-inbox-list">
+        @foreach (var pendiente in pendientes)
+        {
+          <button type="button"
+                  class="validation-inbox-item"
+                  @onclick="() => AbrirPendiente(pendiente)">
+            <span>
+              <strong>@pendiente.Docente.Apellidos, @pendiente.Docente.Nombres</strong>
+              <small>@pendiente.Docente.TipoNombre · @CarreraAdscripcion(pendiente.Docente)</small>
+            </span>
+            <span class="status status-closed">Revisar</span>
+          </button>
+        }
+      </div>
+    }
+  </article>
+}
+
 @if (cargando)
 {
   <div class="table-state">Cargando…</div>
@@ -189,8 +234,9 @@ else if (modelo is not null && DocenteSeleccionado is not null)
       </div>
       @if (puedeValidar && !modelo.Validada && !string.IsNullOrWhiteSpace(modelo.RowVersion))
       {
-        <button class="btn-secondary"
-                disabled="@procesando || guardando || cambiosPendientes"
+        <button type="button"
+                class="btn-secondary"
+                disabled="@procesando"
                 @onclick="Validar">
           @(procesando ? "Validando…" : "Validar disponibilidad")
         </button>
@@ -223,7 +269,9 @@ else if (modelo is not null && DocenteSeleccionado is not null)
   private bool cambiosPendientes;
   private bool puedeCapturar;
   private bool puedeValidar;
+  private bool cargandoPendientes;
   private int revisionCaptura;
+  private List<PendienteValidacion> pendientes = [];
   private string estadoGuardado = "Sin cambios";
   private string? mensaje;
   private string? error;
@@ -250,6 +298,10 @@ else if (modelo is not null && DocenteSeleccionado is not null)
       await Task.WhenAll(docentesTask, periodosTask);
       docentes = (await docentesTask).ToList();
       periodos = (await periodosTask).Where(x => x.Estado == 2).ToList();
+      if (puedeValidar)
+      {
+        await CargarPendientes();
+      }
     }
     catch (Exception ex)
     {
@@ -260,6 +312,65 @@ else if (modelo is not null && DocenteSeleccionado is not null)
       cargando = false;
     }
   }
+
+  private async Task CargarPendientes()
+  {
+    if (!puedeValidar)
+    {
+      return;
+    }
+
+    var periodoActivo = periodos.SingleOrDefault();
+    if (periodoActivo is null)
+    {
+      pendientes = [];
+      return;
+    }
+
+    cargandoPendientes = true;
+    try
+    {
+      var tareas = docentes
+        .Where(x => x.Activo)
+        .Select(async docente =>
+        {
+          try
+          {
+            var disponibilidad = await DocentesApi.ObtenerDisponibilidadAsync(
+              docente.Id,
+              periodoActivo.Id);
+            return disponibilidad is { Id: not null, Validada: false }
+              ? new PendienteValidacion(docente, disponibilidad)
+              : null;
+          }
+          catch
+          {
+            return null;
+          }
+        });
+
+      pendientes = (await Task.WhenAll(tareas))
+        .OfType<PendienteValidacion>()
+        .OrderBy(x => x.Docente.Apellidos)
+        .ThenBy(x => x.Docente.Nombres)
+        .ToList();
+    }
+    finally
+    {
+      cargandoPendientes = false;
+    }
+  }
+
+  private async Task AbrirPendiente(PendienteValidacion pendiente)
+  {
+    periodoId = pendiente.Disponibilidad.PeriodoId;
+    docenteId = pendiente.Docente.Id;
+    await CargarDisponibilidad();
+  }
+
+  private static string CarreraAdscripcion(DocenteDto docente) =>
+    docente.Carreras.SingleOrDefault(x => x.EsPrincipal)?.Nombre
+    ?? "Sin carrera de adscripción";
 
   private async Task CargarDisponibilidad()
   {
@@ -492,14 +603,34 @@ else if (modelo is not null && DocenteSeleccionado is not null)
 
   private async Task Validar()
   {
-    if (modelo is null || cambiosPendientes || guardando)
+    if (modelo is null)
     {
+      error = "Selecciona una disponibilidad antes de validarla.";
       return;
     }
+
     procesando = true;
+    mensaje = null;
     error = null;
     try
     {
+      if (guardando)
+      {
+        await guardadoGate.WaitAsync();
+        guardadoGate.Release();
+      }
+
+      if (cambiosPendientes && puedeCapturar)
+      {
+        await GuardarAutomaticamente();
+      }
+
+      if (modelo is null || cambiosPendientes || string.IsNullOrWhiteSpace(modelo.RowVersion))
+      {
+        error = "No fue posible confirmar el borrador. Corrige el error de guardado antes de validar.";
+        return;
+      }
+
       var resultado = await DocentesApi.ValidarDisponibilidadAsync(modelo);
       if (!resultado.Correcto || resultado.Disponibilidad is null)
       {
@@ -508,7 +639,11 @@ else if (modelo is not null && DocenteSeleccionado is not null)
       }
       modelo = resultado.Disponibilidad;
       estadoGuardado = "Guardado";
+      cambiosPendientes = false;
       mensaje = "Disponibilidad validada correctamente.";
+      pendientes.RemoveAll(x =>
+        x.Docente.Id == modelo.DocenteId
+        && x.Disponibilidad.PeriodoId == modelo.PeriodoId);
     }
     catch (Exception ex)
     {
@@ -519,4 +654,8 @@ else if (modelo is not null && DocenteSeleccionado is not null)
       procesando = false;
     }
   }
+
+  private sealed record PendienteValidacion(
+    DocenteDto Docente,
+    DisponibilidadDocenteDto Disponibilidad);
 }
