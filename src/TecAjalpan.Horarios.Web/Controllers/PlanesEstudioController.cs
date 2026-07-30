@@ -139,7 +139,7 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
         return Ok(Mapear(materia));
     }
 
-    private static async Task Si    private async Task SincronizarModalidades(
+    private async Task SincronizarModalidades(
         Guid materiaId,
         IEnumerable<Guid> modalidadIds,
         CancellationToken cancellationToken)
@@ -189,7 +189,7 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
         }
     }
 
-ValidarMateria(
+    private async Task<string?> ValidarMateria(
         GuardarMateriaRequest request, CancellationToken cancellationToken)
     {
         if (!await dbContext.Reticulas.AnyAsync(
