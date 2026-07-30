@@ -117,6 +117,16 @@ else
                         <div>
                           <strong>@grupo.Clave · @grupo.Nombre</strong>
                           <small>Semestre @grupo.Semestre · @grupo.Materias.Count materia(s)</small>
+                          @if (grupo.EspacioBaseId.HasValue)
+                          {
+                            <small class="grupo-espacio">
+                              @grupo.EspacioBaseTipo · @grupo.EspacioBaseClave · @grupo.EspacioBaseNombre
+                            </small>
+                          }
+                          else
+                          {
+                            <small class="grupo-sin-espacio">Sin aula o laboratorio asignado</small>
+                          }
                         </div>
                         <div class="oferta-grupo-actions">
                           <button class="btn-link" disabled="@Ocupado"
@@ -263,6 +273,20 @@ else
             <InputText @bind-Value="grupoModelo.Nombre" placeholder="Ej. Segundo A" />
             <ValidationMessage For="() => grupoModelo.Nombre" />
           </div>
+          <div class="form-field full">
+            <label>Aula o laboratorio base</label>
+            <InputSelect @bind-Value="grupoModelo.EspacioBaseId">
+              <option value="@Guid.Empty">Selecciona un espacio</option>
+              @foreach (var espacio in EspaciosConfiguracionActual)
+              {
+                <option value="@espacio.Id">
+                  @espacio.Tipo · @espacio.Clave · @espacio.Nombre
+                  @(espacio.Capacidad.HasValue ? $"· Capacidad {espacio.Capacidad}" : string.Empty)
+                </option>
+              }
+            </InputSelect>
+            <small>El grupo permanecerá en este espacio durante todo el periodo.</small>
+          </div>
         </div>
         @ErrorFormulario()
         <div class="modal-actions">
@@ -328,7 +352,7 @@ else
 }
 
 @code {
-  private OfertaCatalogosDto catalogos = new([], [], []);
+  private OfertaCatalogosDto catalogos = new([], [], [], []);
   private List<PeriodoCarreraOfertaDto> configuraciones = [];
   private List<MateriaDisponibleOfertaDto> materiasDisponibles = [];
   private HashSet<Guid> materiaIds = [];
@@ -355,6 +379,13 @@ else
   private bool MostrarConfirmacionEliminar =>
     mostrarConfirmacionEliminar && configuracionActual is not null;
   private bool Ocupado => cargando || cargandoMaterias || guardando || eliminando;
+  private IEnumerable<OfertaEspacioDto> EspaciosConfiguracionActual =>
+    configuracionActual is null
+      ? []
+      : catalogos.Espacios
+        .Where(x => x.CarreraId == configuracionActual.CarreraId)
+        .OrderBy(x => x.Tipo)
+        .ThenBy(x => x.Nombre);
   private string TextoCarga => eliminando
     ? "Eliminando de la oferta…"
     : guardando
@@ -430,13 +461,20 @@ else
     grupoModelo = new GuardarGrupoOfertaRequest
     {
       PeriodoCarreraId = configuracion.Id, Semestre = grupo.Semestre,
-      Clave = grupo.Clave, Nombre = grupo.Nombre, RowVersion = grupo.RowVersion
+      Clave = grupo.Clave, Nombre = grupo.Nombre,
+      EspacioBaseId = grupo.EspacioBaseId ?? Guid.Empty,
+      RowVersion = grupo.RowVersion
     };
     errorFormulario = null; mostrarGrupo = true;
   }
 
   private async Task GuardarGrupo()
   {
+    if (grupoModelo.EspacioBaseId == Guid.Empty)
+    {
+      errorFormulario = "Selecciona el aula o laboratorio base del grupo.";
+      return;
+    }
     guardando = true; errorFormulario = null;
     try
     {
