@@ -46,7 +46,11 @@
           <NavLink href="/disponibilidad">Disponibilidad</NavLink>
         </Authorized>
       </AuthorizeView>
-      <NavLink href="/oferta">Oferta académica</NavLink>
+      <AuthorizeView Roles="Administrador,Jefatura,Subdirección Académica">
+        <Authorized>
+          <NavLink href="/oferta">Oferta académica</NavLink>
+        </Authorized>
+      </AuthorizeView>
       <NavLink href="/generador">Generador</NavLink>
       <NavLink href="/horario">Editor del horario</NavLink>
       <NavLink href="/reportes">Reportes</NavLink>
