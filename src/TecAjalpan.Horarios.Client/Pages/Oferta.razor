@@ -1,0 +1,423 @@
+@page "/oferta"
+@attribute [Authorize(Roles = "Administrador,Jefatura,Subdirección Académica")]
+@inject OfertaAcademicaApi Api
+
+<PageTitle>Oferta académica | Horarios Tec Ajalpan</PageTitle>
+
+<div class="page-heading">
+  <div>
+    <span class="eyebrow">Planeación del periodo</span>
+    <h1>Oferta académica</h1>
+    <p>Define qué carreras, grupos y materias participarán en la generación de horarios.</p>
+  </div>
+  <button class="btn-primary" disabled="@(periodoId == Guid.Empty)" @onclick="NuevaConfiguracion">
+    + Habilitar carrera
+  </button>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(mensaje))
+{
+  <div class="alerta-exito">@mensaje</div>
+}
+@if (!string.IsNullOrWhiteSpace(error))
+{
+  <div class="alerta-error">@error</div>
+}
+
+<article class="panel oferta-filtros">
+  <div class="form-field">
+    <label for="periodo-oferta">Periodo</label>
+    <InputSelect id="periodo-oferta" @bind-Value="periodoId" @bind-Value:after="CargarOferta">
+      <option value="@Guid.Empty">Selecciona un periodo</option>
+      @foreach (var periodo in catalogos.Periodos)
+      {
+        <option value="@periodo.Id">@periodo.Nombre</option>
+      }
+    </InputSelect>
+  </div>
+  @if (PeriodoSeleccionado is not null)
+  {
+    <div class="oferta-periodo-resumen">
+      <span class="status status-draft">@(PeriodoSeleccionado.Estado == 2 ? "Activo" : "Configuración")</span>
+      <strong>Semestres @(PeriodoSeleccionado.SemestresPares ? "pares" : "impares")</strong>
+      @if (PeriodoSeleccionado.PermitirExcepcionSemestre)
+      {
+        <small>Se permiten excepciones de semestre.</small>
+      }
+    </div>
+  }
+</article>
+
+@if (cargando)
+{
+  <div class="table-state">Cargando oferta académica…</div>
+}
+else if (periodoId == Guid.Empty)
+{
+  <div class="empty-state">
+    <div class="empty-icon">▦</div>
+    <h2>Selecciona el periodo</h2>
+    <p>La oferta se configura de forma independiente para cada periodo.</p>
+  </div>
+}
+else if (configuraciones.Count == 0)
+{
+  <div class="empty-state">
+    <div class="empty-icon">＋</div>
+    <h2>Aún no hay carreras habilitadas</h2>
+    <p>Agrega la primera combinación de carrera y modalidad para comenzar.</p>
+    <button class="btn-secondary" @onclick="NuevaConfiguracion">Habilitar carrera</button>
+  </div>
+}
+else
+{
+  <div class="oferta-grid">
+    @foreach (var configuracion in configuraciones)
+    {
+      <article class="panel oferta-card">
+        <div class="panel-title">
+          <div>
+            <span>@configuracion.CarreraClave · @configuracion.ModalidadNombre</span>
+            <h2>@configuracion.CarreraNombre</h2>
+          </div>
+          <button class="btn-secondary" @onclick="() => NuevoGrupo(configuracion)">+ Grupo</button>
+        </div>
+
+        @if (configuracion.Grupos.Count == 0)
+        {
+          <div class="empty-state compact">
+            <p>No hay grupos registrados para esta modalidad.</p>
+          </div>
+        }
+        else
+        {
+          <div class="oferta-grupos">
+            @foreach (var grupo in configuracion.Grupos)
+            {
+              <section class="oferta-grupo">
+                <div class="oferta-grupo-header">
+                  <div>
+                    <strong>@grupo.Clave · @grupo.Nombre</strong>
+                    <small>Semestre @grupo.Semestre · @grupo.Materias.Count materia(s)</small>
+                  </div>
+                  <div>
+                    <button class="btn-link" @onclick="() => EditarGrupo(configuracion, grupo)">Editar</button>
+                    <button class="btn-link" @onclick="() => SeleccionarMaterias(configuracion, grupo)">
+                      Materias
+                    </button>
+                  </div>
+                </div>
+                @if (grupo.Materias.Count > 0)
+                {
+                  <div class="oferta-materias-resumen">
+                    @foreach (var materia in grupo.Materias)
+                    {
+                      <span title="@materia.Nombre">@materia.Clave · @materia.HorasRequeridas h</span>
+                    }
+                  </div>
+                }
+              </section>
+            }
+          </div>
+        }
+      </article>
+    }
+  </div>
+}
+
+@if (mostrarConfiguracion)
+{
+  <div class="modal-backdrop" @onclick="CerrarModales">
+    <section class="modal-card" role="dialog" aria-modal="true" @onclick:stopPropagation>
+      <div class="modal-header">
+        <div><span class="eyebrow">Oferta del periodo</span><h2>Habilitar carrera y modalidad</h2></div>
+        <button class="icon-button" type="button" @onclick="CerrarModales">×</button>
+      </div>
+      <EditForm Model="configuracionModelo" OnValidSubmit="GuardarConfiguracion">
+        <div class="form-grid">
+          <div class="form-field full">
+            <label>Carrera</label>
+            <InputSelect @bind-Value="configuracionModelo.CarreraId">
+              <option value="@Guid.Empty">Selecciona una carrera</option>
+              @foreach (var carrera in catalogos.Carreras)
+              {
+                <option value="@carrera.Id">@carrera.Clave · @carrera.Nombre</option>
+              }
+            </InputSelect>
+          </div>
+          <div class="form-field full">
+            <label>Modalidad</label>
+            <InputSelect @bind-Value="configuracionModelo.ModalidadId">
+              <option value="@Guid.Empty">Selecciona una modalidad</option>
+              @foreach (var modalidad in catalogos.Modalidades)
+              {
+                <option value="@modalidad.Id">@modalidad.Nombre</option>
+              }
+            </InputSelect>
+          </div>
+        </div>
+        @ErrorFormulario()
+        <div class="modal-actions">
+          <button class="btn-ghost" type="button" @onclick="CerrarModales">Cancelar</button>
+          <button class="btn-primary" type="submit" disabled="@guardando">Habilitar</button>
+        </div>
+      </EditForm>
+    </section>
+  </div>
+}
+
+@if (mostrarGrupo)
+{
+  <div class="modal-backdrop" @onclick="CerrarModales">
+    <section class="modal-card" role="dialog" aria-modal="true" @onclick:stopPropagation>
+      <div class="modal-header">
+        <div><span class="eyebrow">@configuracionActual?.CarreraClave · @configuracionActual?.ModalidadNombre</span>
+          <h2>@(grupoId.HasValue ? "Editar grupo" : "Nuevo grupo")</h2></div>
+        <button class="icon-button" type="button" @onclick="CerrarModales">×</button>
+      </div>
+      <EditForm Model="grupoModelo" OnValidSubmit="GuardarGrupo">
+        <DataAnnotationsValidator />
+        <div class="form-grid">
+          <div class="form-field">
+            <label>Semestre</label>
+            <InputNumber @bind-Value="grupoModelo.Semestre" />
+            <ValidationMessage For="() => grupoModelo.Semestre" />
+          </div>
+          <div class="form-field">
+            <label>Clave</label>
+            <InputText @bind-Value="grupoModelo.Clave" placeholder="Ej. 2A" />
+            <ValidationMessage For="() => grupoModelo.Clave" />
+          </div>
+          <div class="form-field full">
+            <label>Nombre</label>
+            <InputText @bind-Value="grupoModelo.Nombre" placeholder="Ej. Segundo A" />
+            <ValidationMessage For="() => grupoModelo.Nombre" />
+          </div>
+        </div>
+        @ErrorFormulario()
+        <div class="modal-actions">
+          <button class="btn-ghost" type="button" @onclick="CerrarModales">Cancelar</button>
+          <button class="btn-primary" type="submit" disabled="@guardando">Guardar grupo</button>
+        </div>
+      </EditForm>
+    </section>
+  </div>
+}
+
+@if (mostrarMaterias && grupoActual is not null)
+{
+  <div class="modal-backdrop" @onclick="CerrarModales">
+    <section class="modal-card oferta-materias-modal" role="dialog" aria-modal="true" @onclick:stopPropagation>
+      <div class="modal-header">
+        <div><span class="eyebrow">@grupoActual.Clave · Semestre @grupoActual.Semestre</span>
+          <h2>Materias activas del grupo</h2></div>
+        <button class="icon-button" type="button" @onclick="CerrarModales">×</button>
+      </div>
+      <p class="modal-help">Sólo aparecen materias compatibles con la carrera, modalidad y semestre.</p>
+      @if (cargandoMaterias)
+      {
+        <div class="table-state">Cargando materias…</div>
+      }
+      else if (materiasDisponibles.Count == 0)
+      {
+        <div class="empty-state compact"><p>No hay materias compatibles en la retícula activa.</p></div>
+      }
+      else
+      {
+        <div class="career-selector oferta-selector-materias">
+          @foreach (var materia in materiasDisponibles)
+          {
+            <label class="check-field">
+              <input type="checkbox" checked="@materiaIds.Contains(materia.Id)"
+                     @onchange="e => CambiarMateria(materia.Id, Convert.ToBoolean(e.Value))" />
+              <span><strong>@materia.Clave · @materia.Nombre</strong>
+                <small>@materia.HorasSemanales h semanales · Retícula @materia.Reticula</small></span>
+            </label>
+          }
+        </div>
+      }
+      @ErrorFormulario()
+      <div class="modal-actions">
+        <button class="btn-ghost" type="button" @onclick="CerrarModales">Cancelar</button>
+        <button class="btn-primary" type="button" disabled="@(guardando || cargandoMaterias)"
+                @onclick="GuardarMaterias">Guardar materias</button>
+      </div>
+    </section>
+  </div>
+}
+
+@code {
+  private OfertaCatalogosDto catalogos = new([], [], []);
+  private List<PeriodoCarreraOfertaDto> configuraciones = [];
+  private List<MateriaDisponibleOfertaDto> materiasDisponibles = [];
+  private HashSet<Guid> materiaIds = [];
+  private Guid periodoId;
+  private CrearPeriodoCarreraRequest configuracionModelo = new();
+  private GuardarGrupoOfertaRequest grupoModelo = new();
+  private PeriodoCarreraOfertaDto? configuracionActual;
+  private GrupoOfertaDto? grupoActual;
+  private Guid? grupoId;
+  private bool cargando = true;
+  private bool cargandoMaterias;
+  private bool guardando;
+  private bool mostrarConfiguracion;
+  private bool mostrarGrupo;
+  private bool mostrarMaterias;
+  private string? mensaje;
+  private string? error;
+  private string? errorFormulario;
+
+  private OfertaPeriodoDto? PeriodoSeleccionado =>
+    catalogos.Periodos.FirstOrDefault(x => x.Id == periodoId);
+
+  protected override async Task OnInitializedAsync()
+  {
+    try
+    {
+      catalogos = await Api.ObtenerCatalogosAsync();
+      periodoId = catalogos.Periodos.FirstOrDefault(x => x.Estado == 2)?.Id
+        ?? catalogos.Periodos.FirstOrDefault()?.Id
+        ?? Guid.Empty;
+      await CargarOferta();
+    }
+    catch (Exception ex) { error = $"No fue posible cargar la oferta: {ex.Message}"; }
+    finally { cargando = false; }
+  }
+
+  private async Task CargarOferta()
+  {
+    error = null;
+    if (periodoId == Guid.Empty) { configuraciones = []; return; }
+    try { configuraciones = (await Api.ListarAsync(periodoId)).ToList(); }
+    catch (Exception ex) { error = $"No fue posible cargar la oferta: {ex.Message}"; }
+  }
+
+  private void NuevaConfiguracion()
+  {
+    configuracionModelo = new CrearPeriodoCarreraRequest { PeriodoId = periodoId };
+    errorFormulario = null;
+    mostrarConfiguracion = true;
+  }
+
+  private async Task GuardarConfiguracion()
+  {
+    if (configuracionModelo.CarreraId == Guid.Empty || configuracionModelo.ModalidadId == Guid.Empty)
+    { errorFormulario = "Selecciona una carrera y una modalidad."; return; }
+    guardando = true; errorFormulario = null;
+    try
+    {
+      var resultado = await Api.CrearConfiguracionAsync(configuracionModelo);
+      if (!resultado.Correcto || resultado.Valor is null)
+      { errorFormulario = resultado.Mensaje; return; }
+      configuraciones.Add(resultado.Valor);
+      configuraciones = configuraciones.OrderBy(x => x.CarreraNombre).ThenBy(x => x.ModalidadNombre).ToList();
+      mensaje = "Carrera y modalidad habilitadas correctamente.";
+      CerrarModales();
+    }
+    catch (Exception ex) { errorFormulario = $"No fue posible habilitar la carrera: {ex.Message}"; }
+    finally { guardando = false; }
+  }
+
+  private void NuevoGrupo(PeriodoCarreraOfertaDto configuracion)
+  {
+    configuracionActual = configuracion; grupoId = null;
+    grupoModelo = new GuardarGrupoOfertaRequest
+    {
+      PeriodoCarreraId = configuracion.Id,
+      Semestre = SugerirSemestre()
+    };
+    errorFormulario = null; mostrarGrupo = true;
+  }
+
+  private void EditarGrupo(PeriodoCarreraOfertaDto configuracion, GrupoOfertaDto grupo)
+  {
+    configuracionActual = configuracion; grupoId = grupo.Id;
+    grupoModelo = new GuardarGrupoOfertaRequest
+    {
+      PeriodoCarreraId = configuracion.Id, Semestre = grupo.Semestre,
+      Clave = grupo.Clave, Nombre = grupo.Nombre, RowVersion = grupo.RowVersion
+    };
+    errorFormulario = null; mostrarGrupo = true;
+  }
+
+  private async Task GuardarGrupo()
+  {
+    guardando = true; errorFormulario = null;
+    try
+    {
+      var resultado = await Api.GuardarGrupoAsync(grupoId, grupoModelo);
+      if (!resultado.Correcto || resultado.Valor is null)
+      { errorFormulario = resultado.Mensaje; return; }
+      await CargarOferta();
+      mensaje = grupoId.HasValue ? "Grupo actualizado correctamente." : "Grupo creado correctamente.";
+      CerrarModales();
+    }
+    catch (Exception ex) { errorFormulario = $"No fue posible guardar el grupo: {ex.Message}"; }
+    finally { guardando = false; }
+  }
+
+  private async Task SeleccionarMaterias(
+    PeriodoCarreraOfertaDto configuracion, GrupoOfertaDto grupo)
+  {
+    configuracionActual = configuracion; grupoActual = grupo;
+    materiaIds = grupo.Materias.Select(x => x.MateriaId).ToHashSet();
+    materiasDisponibles = []; errorFormulario = null; mostrarMaterias = true; cargandoMaterias = true;
+    try
+    {
+      materiasDisponibles = (await Api.MateriasDisponiblesAsync(
+        configuracion.Id, grupo.Semestre)).ToList();
+    }
+    catch (Exception ex) { errorFormulario = $"No fue posible cargar las materias: {ex.Message}"; }
+    finally { cargandoMaterias = false; }
+  }
+
+  private void CambiarMateria(Guid id, bool seleccionada)
+  {
+    if (seleccionada) materiaIds.Add(id); else materiaIds.Remove(id);
+  }
+
+  private async Task GuardarMaterias()
+  {
+    if (grupoActual is null) return;
+    guardando = true; errorFormulario = null;
+    try
+    {
+      var resultado = await Api.GuardarMateriasAsync(grupoActual.Id,
+        new GuardarMateriasOfertaRequest
+        {
+          MateriaIds = materiaIds.ToList(),
+          RowVersionGrupo = grupoActual.RowVersion
+        });
+      if (!resultado.Correcto || resultado.Valor is null)
+      { errorFormulario = resultado.Mensaje; return; }
+      await CargarOferta();
+      mensaje = "Materias del grupo actualizadas correctamente.";
+      CerrarModales();
+    }
+    catch (Exception ex) { errorFormulario = $"No fue posible guardar las materias: {ex.Message}"; }
+    finally { guardando = false; }
+  }
+
+  private int SugerirSemestre()
+  {
+    var periodo = PeriodoSeleccionado;
+    return periodo?.SemestresPares == true ? 2 : 1;
+  }
+
+  private void CerrarModales()
+  {
+    mostrarConfiguracion = mostrarGrupo = mostrarMaterias = false;
+    errorFormulario = null;
+  }
+
+  private RenderFragment ErrorFormulario() => builder =>
+  {
+    if (!string.IsNullOrWhiteSpace(errorFormulario))
+    {
+      builder.OpenElement(0, "div");
+      builder.AddAttribute(1, "class", "alerta-error");
+      builder.AddContent(2, errorFormulario);
+      builder.CloseElement();
+    }
+  };
+}
