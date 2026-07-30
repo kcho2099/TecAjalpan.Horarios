@@ -5,7 +5,8 @@ namespace TecAjalpan.Horarios.Contracts.Oferta;
 public sealed record OfertaCatalogosDto(
     IReadOnlyList<OfertaPeriodoDto> Periodos,
     IReadOnlyList<OfertaCarreraDto> Carreras,
-    IReadOnlyList<OfertaModalidadDto> Modalidades);
+    IReadOnlyList<OfertaModalidadDto> Modalidades,
+    IReadOnlyList<OfertaEspacioDto> Espacios);
 
 public sealed record OfertaPeriodoDto(
     Guid Id,
@@ -17,6 +18,14 @@ public sealed record OfertaPeriodoDto(
 public sealed record OfertaCarreraDto(Guid Id, string Clave, string Nombre);
 
 public sealed record OfertaModalidadDto(Guid Id, string Clave, string Nombre);
+
+public sealed record OfertaEspacioDto(
+    Guid Id,
+    Guid CarreraId,
+    string Clave,
+    string Nombre,
+    string Tipo,
+    short? Capacidad);
 
 public sealed record PeriodoCarreraOfertaDto(
     Guid Id,
@@ -34,6 +43,10 @@ public sealed record GrupoOfertaDto(
     byte Semestre,
     string Clave,
     string Nombre,
+    Guid? EspacioBaseId,
+    string? EspacioBaseClave,
+    string? EspacioBaseNombre,
+    string? EspacioBaseTipo,
     IReadOnlyList<MateriaOfertaDto> Materias,
     string RowVersion);
 
@@ -74,6 +87,8 @@ public sealed class GuardarGrupoOfertaRequest
     [Required(ErrorMessage = "El nombre del grupo es obligatorio.")]
     [StringLength(120, MinimumLength = 2)]
     public string Nombre { get; set; } = string.Empty;
+
+    public Guid EspacioBaseId { get; set; }
 
     public string? RowVersion { get; set; }
 }
