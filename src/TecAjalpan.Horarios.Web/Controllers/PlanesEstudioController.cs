@@ -101,7 +101,7 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
         var materia = new Materia();
         Aplicar(request, materia);
         dbContext.Materias.Add(materia);
-        await SincronizarModalidades(materia, request.ModalidadIds, cancellationToken);
+        await SincronizarModalidades(materia.Id, request.ModalidadIds, cancellationToken);
         return await GuardarMateria(materia, true, cancellationToken);
     }
 
@@ -119,9 +119,8 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
         Aplicar(request, materia);
         dbContext.Entry(materia).Property(x => x.Nombre).IsModified = true;
         await SincronizarModalidades(
-            dbContext,
             materia.Id,
-            request.ModalidadIds,            
+            request.ModalidadIds,
             cancellationToken);
         return await GuardarMateria(materia, false, cancellationToken);
     }
@@ -140,11 +139,10 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
         return Ok(Mapear(materia));
     }
 
-    private static async Task SincronizarModalidades(
-    ApplicationDbContext dbContext,
-    Guid materiaId,
-    IEnumerable<Guid> modalidadIds,
-    CancellationToken cancellationToken)
+    private static async Task Si    private async Task SincronizarModalidades(
+        Guid materiaId,
+        IEnumerable<Guid> modalidadIds,
+        CancellationToken cancellationToken)
     {
         var idsSeleccionados = modalidadIds
             .Distinct()
@@ -155,50 +153,43 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
             .Where(x => x.MateriaId == materiaId)
             .ToListAsync(cancellationToken);
 
-        foreach (var relacion in relaciones)
+        foreach (var relacion in relaciones.Where(x =>
+                     !x.Eliminado &&
+                     !idsSeleccionados.Contains(x.ModalidadId)))
         {
-            var seleccionada = idsSeleccionados.Contains(relacion.ModalidadId);
-
-            if (seleccionada && relacion.Eliminado)
-            {
-                // Reactivar relación existente.
-                relacion.Eliminado = false;
-            }
-            else if (!seleccionada && !relacion.Eliminado)
-            {
-                // Dar de baja lógicamente.
-                relacion.Eliminado = true;
-            }
+            dbContext.MateriasModalidades.Remove(relacion);
         }
 
-        var modalidadesExistentes = relaciones
-            .Select(x => x.ModalidadId)
-            .ToHashSet();
-
-        foreach (var modalidadId in idsSeleccionados.Except(modalidadesExistentes))
+        foreach (var modalidadId in idsSeleccionados)
         {
+            var relacionActiva = relaciones.FirstOrDefault(x =>
+                x.ModalidadId == modalidadId &&
+                !x.Eliminado);
+
+            if (relacionActiva is not null)
+                continue;
+
+            var relacionEliminada = relaciones.FirstOrDefault(x =>
+                x.ModalidadId == modalidadId &&
+                x.Eliminado);
+
+            if (relacionEliminada is not null)
+            {
+                relacionEliminada.Eliminado = false;
+                relacionEliminada.UsuarioElimina = null;
+                relacionEliminada.FechaElimina = null;
+                continue;
+            }
+
             dbContext.MateriasModalidades.Add(new MateriaModalidad
             {
                 MateriaId = materiaId,
-                ModalidadId = modalidadId,
-                FechaModifica = DateTime.Now,
-                Eliminado = false
+                ModalidadId = modalidadId
             });
         }
     }
 
-    private async Task SincronizarModalidades(
-        Materia materia, IEnumerable<Guid> modalidadIds, CancellationToken cancellationToken)
-    {
-        var ids = modalidadIds.Distinct().ToHashSet();
-        foreach (var actual in materia.MateriasModalidades.Where(x => !ids.Contains(x.ModalidadId)).ToArray())
-            dbContext.MateriasModalidades.Remove(actual);
-        var actuales = materia.MateriasModalidades.Select(x => x.ModalidadId).ToHashSet();
-        foreach (var id in ids.Where(x => !actuales.Contains(x)))
-            materia.MateriasModalidades.Add(new MateriaModalidad { ModalidadId = id });
-    }
-
-    private async Task<string?> ValidarMateria(
+ValidarMateria(
         GuardarMateriaRequest request, CancellationToken cancellationToken)
     {
         if (!await dbContext.Reticulas.AnyAsync(
