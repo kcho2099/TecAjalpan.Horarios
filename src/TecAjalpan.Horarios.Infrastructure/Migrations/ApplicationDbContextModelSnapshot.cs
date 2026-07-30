@@ -1037,6 +1037,9 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                     b.Property<bool>("Eliminado")
                         .HasColumnType("bit");
 
+                    b.Property<Guid?>("EspacioBaseId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTime>("FechaCrea")
                         .HasColumnType("datetime2");
 
@@ -1074,6 +1077,8 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("EspacioBaseId");
 
                     b.HasIndex("PeriodoCarreraId", "Clave")
                         .IsUnique();
@@ -2194,11 +2199,18 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
 
             modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.Grupo", b =>
                 {
+                    b.HasOne("TecAjalpan.Horarios.Domain.Entities.Espacio", "EspacioBase")
+                        .WithMany()
+                        .HasForeignKey("EspacioBaseId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("TecAjalpan.Horarios.Domain.Entities.PeriodoCarrera", "PeriodoCarrera")
                         .WithMany("Grupos")
                         .HasForeignKey("PeriodoCarreraId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("EspacioBase");
 
                     b.Navigation("PeriodoCarrera");
                 });
