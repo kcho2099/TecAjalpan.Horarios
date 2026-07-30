@@ -72,60 +72,126 @@ else if (configuraciones.Count == 0)
 }
 else
 {
-  <div class="oferta-grid">
-    @foreach (var configuracion in configuraciones)
+  <div class="oferta-carreras">
+    @foreach (var carrera in configuraciones
+      .GroupBy(x => new { x.CarreraId, x.CarreraClave, x.CarreraNombre })
+      .OrderBy(x => x.Key.CarreraNombre))
     {
-      <article class="panel oferta-card">
-        <div class="panel-title">
-          <div>
-            <span>@configuracion.CarreraClave · @configuracion.ModalidadNombre</span>
-            <h2>@configuracion.CarreraNombre</h2>
-          </div>
-          <button class="btn-secondary" disabled="@Ocupado"
-                  @onclick="() => NuevoGrupo(configuracion)">+ Grupo</button>
+      <section class="panel oferta-carrera">
+        <div class="oferta-carrera-header">
+          <span class="eyebrow">@carrera.Key.CarreraClave</span>
+          <h2>@carrera.Key.CarreraNombre</h2>
         </div>
-
-        @if (configuracion.Grupos.Count == 0)
-        {
-          <div class="empty-state compact">
-            <p>No hay grupos registrados para esta modalidad.</p>
-          </div>
-        }
-        else
-        {
-          <div class="oferta-grupos">
-            @foreach (var grupo in configuracion.Grupos)
-            {
-              <section class="oferta-grupo">
-                <div class="oferta-grupo-header">
-                  <div>
-                    <strong>@grupo.Clave · @grupo.Nombre</strong>
-                    <small>Semestre @grupo.Semestre · @grupo.Materias.Count materia(s)</small>
-                  </div>
-                  <div>
-                    <button class="btn-link" disabled="@Ocupado"
-                            @onclick="() => EditarGrupo(configuracion, grupo)">Editar</button>
-                    <button class="btn-link" disabled="@Ocupado"
-                            @onclick="() => SeleccionarMaterias(configuracion, grupo)">
-                      Materias
-                    </button>
-                  </div>
+        <div class="oferta-modalidades">
+          @foreach (var configuracion in carrera.OrderBy(x => x.ModalidadNombre))
+          {
+            <article class="oferta-card">
+              <div class="panel-title">
+                <div>
+                  <span>Modalidad</span>
+                  <h3>@configuracion.ModalidadNombre</h3>
                 </div>
-                @if (grupo.Materias.Count > 0)
-                {
-                  <div class="oferta-materias-resumen">
-                    @foreach (var materia in grupo.Materias)
-                    {
-                      <span title="@materia.Nombre">@materia.Clave · @materia.HorasRequeridas h</span>
-                    }
-                  </div>
-                }
-              </section>
-            }
-          </div>
-        }
-      </article>
+                <div class="oferta-card-actions">
+                  <button class="btn-secondary" disabled="@Ocupado"
+                          @onclick="() => NuevoGrupo(configuracion)">+ Grupo</button>
+                  <button class="btn-link danger-link" disabled="@Ocupado"
+                          @onclick="() => ConfirmarEliminarConfiguracion(configuracion)">
+                    Eliminar oferta
+                  </button>
+                </div>
+              </div>
+
+              @if (configuracion.Grupos.Count == 0)
+              {
+                <div class="empty-state compact">
+                  <p>No hay grupos registrados para esta modalidad.</p>
+                </div>
+              }
+              else
+              {
+                <div class="oferta-grupos">
+                  @foreach (var grupo in configuracion.Grupos)
+                  {
+                    <section class="oferta-grupo">
+                      <div class="oferta-grupo-header">
+                        <div>
+                          <strong>@grupo.Clave · @grupo.Nombre</strong>
+                          <small>Semestre @grupo.Semestre · @grupo.Materias.Count materia(s)</small>
+                        </div>
+                        <div class="oferta-grupo-actions">
+                          <button class="btn-link" disabled="@Ocupado"
+                                  @onclick="() => EditarGrupo(configuracion, grupo)">Editar</button>
+                          <button class="btn-link" disabled="@Ocupado"
+                                  @onclick="() => SeleccionarMaterias(configuracion, grupo)">
+                            Materias
+                          </button>
+                          <button class="btn-link danger-link" disabled="@Ocupado"
+                                  @onclick="() => ConfirmarEliminarGrupo(configuracion, grupo)">
+                            Eliminar
+                          </button>
+                        </div>
+                      </div>
+                      @if (grupo.Materias.Count > 0)
+                      {
+                        <div class="oferta-materias-resumen">
+                          @foreach (var materia in grupo.Materias)
+                          {
+                            <span title="@materia.Nombre">@materia.Clave · @materia.HorasRequeridas h</span>
+                          }
+                        </div>
+                      }
+                    </section>
+                  }
+                </div>
+              }
+            </article>
+          }
+        </div>
+      </section>
     }
+  </div>
+}
+
+@if (MostrarConfirmacionEliminar && configuracionActual is not null)
+{
+  <div class="modal-backdrop" @onclick="CerrarModales">
+    <section class="modal-card confirm-card" role="alertdialog" aria-modal="true"
+             aria-labelledby="titulo-eliminar-oferta" @onclick:stopPropagation>
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">Confirmar eliminación</span>
+          <h2 id="titulo-eliminar-oferta">
+            @(grupoActual is null ? "Eliminar oferta académica" : "Eliminar grupo")
+          </h2>
+        </div>
+        <button class="icon-button" type="button" disabled="@Ocupado" @onclick="CerrarModales">×</button>
+      </div>
+      @if (grupoActual is null)
+      {
+        <p>
+          Se quitará la modalidad <strong>@configuracionActual.ModalidadNombre</strong> de
+          <strong>@configuracionActual.CarreraNombre</strong>, junto con sus
+          <strong>@configuracionActual.Grupos.Count grupo(s)</strong> y todas sus materias ofertadas.
+        </p>
+      }
+      else
+      {
+        <p>
+          Se quitará el grupo <strong>@grupoActual.Clave · @grupoActual.Nombre</strong>
+          y sus <strong>@grupoActual.Materias.Count materia(s)</strong> ofertadas.
+        </p>
+      }
+      <p class="modal-help">Esta acción quedará registrada en la auditoría.</p>
+      @ErrorFormulario()
+      <div class="modal-actions">
+        <button class="btn-ghost" type="button" disabled="@Ocupado" @onclick="CerrarModales">
+          Cancelar
+        </button>
+        <button class="btn-danger" type="button" disabled="@Ocupado" @onclick="EliminarSeleccion">
+          Sí, eliminar
+        </button>
+      </div>
+    </section>
   </div>
 }
 
@@ -275,17 +341,23 @@ else
   private bool cargando = true;
   private bool cargandoMaterias;
   private bool guardando;
+  private bool eliminando;
   private bool mostrarConfiguracion;
   private bool mostrarGrupo;
   private bool mostrarMaterias;
+  private bool mostrarConfirmacionEliminar;
   private string? mensaje;
   private string? error;
   private string? errorFormulario;
 
   private OfertaPeriodoDto? PeriodoSeleccionado =>
     catalogos.Periodos.FirstOrDefault(x => x.Id == periodoId);
-  private bool Ocupado => cargando || cargandoMaterias || guardando;
-  private string TextoCarga => guardando
+  private bool MostrarConfirmacionEliminar =>
+    mostrarConfirmacionEliminar && configuracionActual is not null;
+  private bool Ocupado => cargando || cargandoMaterias || guardando || eliminando;
+  private string TextoCarga => eliminando
+    ? "Eliminando de la oferta…"
+    : guardando
     ? "Guardando cambios…"
     : cargandoMaterias
       ? "Cargando materias…"
@@ -421,6 +493,52 @@ else
     finally { guardando = false; }
   }
 
+  private void ConfirmarEliminarConfiguracion(PeriodoCarreraOfertaDto configuracion)
+  {
+    configuracionActual = configuracion;
+    grupoActual = null;
+    errorFormulario = null;
+    mostrarConfirmacionEliminar = true;
+  }
+
+  private void ConfirmarEliminarGrupo(
+    PeriodoCarreraOfertaDto configuracion, GrupoOfertaDto grupo)
+  {
+    configuracionActual = configuracion;
+    grupoActual = grupo;
+    errorFormulario = null;
+    mostrarConfirmacionEliminar = true;
+  }
+
+  private async Task EliminarSeleccion()
+  {
+    if (configuracionActual is null) return;
+    eliminando = true;
+    errorFormulario = null;
+    try
+    {
+      var esGrupo = grupoActual is not null;
+      var resultado = esGrupo
+        ? await Api.EliminarGrupoAsync(grupoActual!.Id, grupoActual.RowVersion)
+        : await Api.EliminarConfiguracionAsync(configuracionActual.Id, configuracionActual.RowVersion);
+      if (!resultado.Correcto)
+      {
+        errorFormulario = resultado.Mensaje;
+        return;
+      }
+      await CargarOferta();
+      mensaje = esGrupo
+        ? "Grupo eliminado de la oferta académica."
+        : "Oferta académica eliminada junto con sus grupos.";
+      CerrarModalesForzado();
+    }
+    catch (Exception ex)
+    {
+      errorFormulario = $"No fue posible eliminar de la oferta: {ex.Message}";
+    }
+    finally { eliminando = false; }
+  }
+
   private int SugerirSemestre()
   {
     var periodo = PeriodoSeleccionado;
@@ -435,7 +553,9 @@ else
 
   private void CerrarModalesForzado()
   {
-    mostrarConfiguracion = mostrarGrupo = mostrarMaterias = false;
+    mostrarConfiguracion = mostrarGrupo = mostrarMaterias = mostrarConfirmacionEliminar = false;
+    configuracionActual = null;
+    grupoActual = null;
     errorFormulario = null;
   }
 
