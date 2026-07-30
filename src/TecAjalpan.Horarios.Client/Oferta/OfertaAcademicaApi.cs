@@ -10,7 +10,7 @@ public sealed class OfertaAcademicaApi(HttpClient httpClient)
         CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<OfertaCatalogosDto>(
             "api/oferta-academica/catalogos", cancellationToken)
-        ?? new([], [], []);
+        ?? new([], [], [], []);
 
     public async Task<IReadOnlyList<PeriodoCarreraOfertaDto>> ListarAsync(
         Guid periodoId,
