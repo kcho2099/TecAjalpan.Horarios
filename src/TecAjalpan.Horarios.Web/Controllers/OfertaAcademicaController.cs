@@ -48,7 +48,16 @@ public sealed class OfertaAcademicaController(
             .OrderBy(x => x.Tipo)
             .Select(x => new OfertaModalidadDto(x.Id, x.Clave, x.Nombre))
             .ToArrayAsync(cancellationToken);
-        return Ok(new OfertaCatalogosDto(periodos, carreras, modalidades));
+        var idsCarrerasPermitidas = carreras.Select(x => x.Id).ToArray();
+        var espacios = await dbContext.Espacios.AsNoTracking()
+            .Where(x => x.Activo && idsCarrerasPermitidas.Contains(x.CarreraId))
+            .OrderBy(x => x.Carrera.Nombre)
+            .ThenBy(x => x.Tipo)
+            .ThenBy(x => x.Nombre)
+            .Select(x => new OfertaEspacioDto(
+                x.Id, x.CarreraId, x.Clave, x.Nombre, x.Tipo, x.Capacidad))
+            .ToArrayAsync(cancellationToken);
+        return Ok(new OfertaCatalogosDto(periodos, carreras, modalidades, espacios));
     }
 
     [HttpGet]
@@ -63,6 +72,8 @@ public sealed class OfertaAcademicaController(
             .Include(x => x.Grupos)
                 .ThenInclude(x => x.Oferta)
                 .ThenInclude(x => x.Materia)
+            .Include(x => x.Grupos)
+                .ThenInclude(x => x.EspacioBase)
             .AsQueryable();
         if (!usuarioActual.TieneRol(Roles.Administrador)
             && !usuarioActual.TieneRol(Roles.Subdireccion))
@@ -216,6 +227,7 @@ public sealed class OfertaAcademicaController(
         CancellationToken cancellationToken)
     {
         var grupo = await dbContext.Grupos.Include(x => x.Oferta).ThenInclude(x => x.Materia)
+            .Include(x => x.EspacioBase)
             .Include(x => x.PeriodoCarrera)
             .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (grupo is null) return NotFound();
@@ -355,6 +367,22 @@ public sealed class OfertaAcademicaController(
                 && x.Clave == clave
                 && (!grupoId.HasValue || x.Id != grupoId.Value), cancellationToken))
             return "Ya existe un grupo con esa clave en la carrera y modalidad.";
+        if (request.EspacioBaseId == Guid.Empty)
+            return "Selecciona el aula o laboratorio base del grupo.";
+        var espacioValido = await dbContext.Espacios.AnyAsync(x =>
+            x.Id == request.EspacioBaseId
+            && x.Activo
+            && x.CarreraId == configuracion.CarreraId,
+            cancellationToken);
+        if (!espacioValido)
+            return "El espacio debe estar activo y pertenecer a la misma carrera del grupo.";
+        var espacioOcupado = await dbContext.Grupos.AnyAsync(x =>
+            x.EspacioBaseId == request.EspacioBaseId
+            && x.PeriodoCarrera.PeriodoId == configuracion.PeriodoId
+            && (!grupoId.HasValue || x.Id != grupoId.Value),
+            cancellationToken);
+        if (espacioOcupado)
+            return "El aula o laboratorio ya está asignado a otro grupo en este periodo.";
         return null;
     }
 
@@ -364,6 +392,9 @@ public sealed class OfertaAcademicaController(
         try { await dbContext.SaveChangesAsync(cancellationToken); }
         catch (DbUpdateConcurrencyException) { return Conflicto("El grupo"); }
         catch (DbUpdateException) { return Conflict(new { mensaje = "Ya existe esa clave de grupo." }); }
+        var referenciaEspacio = dbContext.Entry(grupo).Reference(x => x.EspacioBase);
+        referenciaEspacio.IsLoaded = false;
+        await referenciaEspacio.LoadAsync(cancellationToken);
         return creado ? Created("api/oferta-academica/grupos", Mapear(grupo)) : Ok(Mapear(grupo));
     }
 
@@ -376,6 +407,9 @@ public sealed class OfertaAcademicaController(
         await dbContext.Entry(configuracion).Collection(x => x.Grupos).Query()
             .Include(x => x.Oferta).ThenInclude(x => x.Materia)
             .LoadAsync(cancellationToken);
+        await dbContext.Entry(configuracion).Collection(x => x.Grupos).Query()
+            .Include(x => x.EspacioBase)
+            .LoadAsync(cancellationToken);
     }
 
     private static void Aplicar(GuardarGrupoOfertaRequest request, Grupo grupo)
@@ -384,6 +418,7 @@ public sealed class OfertaAcademicaController(
         grupo.Semestre = checked((byte)request.Semestre);
         grupo.Clave = request.Clave.Trim().ToUpperInvariant();
         grupo.Nombre = request.Nombre.Trim();
+        grupo.EspacioBaseId = request.EspacioBaseId;
     }
 
     private static PeriodoCarreraOfertaDto Mapear(PeriodoCarrera x) => new(
@@ -398,6 +433,7 @@ public sealed class OfertaAcademicaController(
 
     private static GrupoOfertaDto Mapear(Grupo x) => new(
         x.Id, x.Semestre, x.Clave, x.Nombre,
+        x.EspacioBaseId, x.EspacioBase?.Clave, x.EspacioBase?.Nombre, x.EspacioBase?.Tipo,
         x.Oferta.Where(o => !o.Eliminado && o.Activa).OrderBy(o => o.Materia.Nombre)
             .Select(o => new MateriaOfertaDto(
                 o.Id, o.MateriaId, o.Materia.Clave, o.Materia.Nombre,
