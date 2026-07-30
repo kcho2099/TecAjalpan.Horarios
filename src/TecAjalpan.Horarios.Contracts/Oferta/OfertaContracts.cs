@@ -85,3 +85,9 @@ public sealed class GuardarMateriasOfertaRequest
     [Required]
     public string RowVersionGrupo { get; set; } = string.Empty;
 }
+
+public sealed class EliminarOfertaRequest
+{
+    [Required]
+    public string RowVersion { get; set; } = string.Empty;
+}
