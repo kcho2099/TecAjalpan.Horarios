@@ -732,7 +732,7 @@ main {
   z-index: 1000;
 }
 
-.btn-secondary, .btn-ghost, .btn-link, .icon-button {
+.btn-secondary, .btn-ghost, .btn-danger, .btn-link, .icon-button {
   font: inherit;
   cursor: pointer;
 }
@@ -753,6 +753,24 @@ main {
   color: var(--tinta);
   background: white;
   font-weight: 700;
+}
+
+.btn-danger {
+  border: 0;
+  border-radius: 9px;
+  padding: 11px 18px;
+  color: white;
+  background: #a52828;
+  font-weight: 700;
+}
+
+.btn-danger:hover {
+  background: #7f1d1d;
+}
+
+.btn-danger:disabled {
+  opacity: .55;
+  cursor: wait;
 }
 
 .btn-link {
@@ -1490,13 +1508,46 @@ main {
   color: var(--gris);
 }
 
-.oferta-grid {
+.oferta-carreras {
   display: grid;
   gap: 1.25rem;
 }
 
+.oferta-carrera {
+  display: grid;
+  gap: 1rem;
+}
+
+.oferta-carrera-header h2 {
+  margin: .25rem 0 0;
+}
+
+.oferta-modalidades {
+  display: grid;
+  gap: 1rem;
+}
+
+.oferta-card {
+  border: 1px solid var(--borde);
+  border-radius: 14px;
+  padding: 1rem;
+  background: #fafafa;
+}
+
 .oferta-card .panel-title {
   margin-bottom: 1rem;
+}
+
+.oferta-card .panel-title h3 {
+  margin: .2rem 0 0;
+}
+
+.oferta-card-actions,
+.oferta-grupo-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .35rem;
 }
 
 .oferta-grupos {
@@ -1560,9 +1611,15 @@ main {
 
 @media (max-width: 720px) {
   .oferta-filtros,
-  .oferta-grupo-header {
+  .oferta-grupo-header,
+  .oferta-card .panel-title {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .oferta-card-actions,
+  .oferta-grupo-actions {
+    justify-content: flex-start;
   }
 }
 
