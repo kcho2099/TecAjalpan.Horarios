@@ -41,6 +41,11 @@
           <NavLink href="/docentes">Docentes</NavLink>
         </Authorized>
       </AuthorizeView>
+      <AuthorizeView Roles="Administrador,Jefatura,Subdirección Académica">
+        <Authorized>
+          <NavLink href="/espacios">Aulas y laboratorios</NavLink>
+        </Authorized>
+      </AuthorizeView>
       <AuthorizeView Roles="Administrador,Secretaría,Jefatura,Subdirección Académica">
         <Authorized>
           <NavLink href="/disponibilidad">Disponibilidad</NavLink>
