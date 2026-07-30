@@ -166,6 +166,36 @@ public sealed class OfertaAcademicaController(
         return Created("api/oferta-academica", Mapear(configuracion));
     }
 
+    [HttpDelete("configuraciones/{id:guid}")]
+    public async Task<IActionResult> EliminarConfiguracion(
+        Guid id,
+        EliminarOfertaRequest request,
+        CancellationToken cancellationToken)
+    {
+        var configuracion = await dbContext.PeriodosCarreras
+            .Include(x => x.Periodo)
+            .Include(x => x.Grupos)
+                .ThenInclude(x => x.Oferta)
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (configuracion is null) return NotFound();
+        if (!usuarioActual.PuedeAccederCarrera(configuracion.CarreraId)) return Forbid();
+        if (!Coincide(request.RowVersion, configuracion.RowVersion))
+            return Conflicto("La oferta académica");
+        if (configuracion.Periodo.Estado == EstadoPeriodo.Cerrado)
+            return Conflict(new { mensaje = "No se puede eliminar la oferta de un periodo cerrado." });
+
+        foreach (var grupo in configuracion.Grupos)
+        {
+            dbContext.OfertasMaterias.RemoveRange(grupo.Oferta);
+            dbContext.Grupos.Remove(grupo);
+        }
+        dbContext.PeriodosCarreras.Remove(configuracion);
+
+        try { await dbContext.SaveChangesAsync(cancellationToken); }
+        catch (DbUpdateConcurrencyException) { return Conflicto("La oferta académica"); }
+        return NoContent();
+    }
+
     [HttpPost("grupos")]
     public async Task<ActionResult<GrupoOfertaDto>> CrearGrupo(
         GuardarGrupoOfertaRequest request,
@@ -195,6 +225,33 @@ public sealed class OfertaAcademicaController(
         if (validacion is not null) return BadRequest(new { mensaje = validacion });
         Aplicar(request, grupo);
         return await GuardarGrupo(grupo, false, cancellationToken);
+    }
+
+    [HttpDelete("grupos/{id:guid}")]
+    public async Task<IActionResult> EliminarGrupo(
+        Guid id,
+        EliminarOfertaRequest request,
+        CancellationToken cancellationToken)
+    {
+        var grupo = await dbContext.Grupos
+            .Include(x => x.PeriodoCarrera)
+                .ThenInclude(x => x.Periodo)
+            .Include(x => x.Oferta)
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (grupo is null) return NotFound();
+        if (!usuarioActual.PuedeAccederCarrera(grupo.PeriodoCarrera.CarreraId))
+            return Forbid();
+        if (!Coincide(request.RowVersion, grupo.RowVersion))
+            return Conflicto("El grupo");
+        if (grupo.PeriodoCarrera.Periodo.Estado == EstadoPeriodo.Cerrado)
+            return Conflict(new { mensaje = "No se puede eliminar un grupo de un periodo cerrado." });
+
+        dbContext.OfertasMaterias.RemoveRange(grupo.Oferta);
+        dbContext.Grupos.Remove(grupo);
+
+        try { await dbContext.SaveChangesAsync(cancellationToken); }
+        catch (DbUpdateConcurrencyException) { return Conflicto("El grupo"); }
+        return NoContent();
     }
 
     [HttpPut("grupos/{id:guid}/materias")]
