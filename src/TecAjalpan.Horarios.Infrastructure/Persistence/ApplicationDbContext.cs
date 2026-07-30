@@ -173,7 +173,7 @@ public sealed class ApplicationDbContext(
             entity.HasIndex(x => new { x.MateriaId, x.ModalidadId })
                 .IsUnique()
                 .HasFilter("[Eliminado] = 0");
-            entity.HasOne(x => x.Materia).WithMany(x => x.Modalidades)
+            entity.HasOne(x => x.Materia).WithMany(x => x.MateriasModalidades)
                 .HasForeignKey(x => x.MateriaId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(x => x.Modalidad).WithMany()
                 .HasForeignKey(x => x.ModalidadId).OnDelete(DeleteBehavior.Restrict);

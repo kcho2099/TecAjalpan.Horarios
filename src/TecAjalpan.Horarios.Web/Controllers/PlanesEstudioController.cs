@@ -43,7 +43,7 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
         CancellationToken cancellationToken)
     {
         var consulta = dbContext.Materias.AsNoTracking()
-            .Include(x => x.Modalidades).ThenInclude(x => x.Modalidad)
+            .Include(x => x.MateriasModalidades).ThenInclude(x => x.Modalidad)
             .Where(x => x.ReticulaId == reticulaId);
         if (semestre.HasValue)
             consulta = consulta.Where(x => x.Semestre == semestre);
@@ -112,13 +112,17 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
     {
         var error = await ValidarMateria(request, cancellationToken);
         if (error is not null) return BadRequest(new { mensaje = error });
-        var materia = await dbContext.Materias.Include(x => x.Modalidades)
+        var materia = await dbContext.Materias.Include(x => x.MateriasModalidades)
             .ThenInclude(x => x.Modalidad).SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (materia is null) return NotFound();
         if (!Coincide(request.RowVersion, materia.RowVersion)) return Conflicto("La materia");
         Aplicar(request, materia);
         dbContext.Entry(materia).Property(x => x.Nombre).IsModified = true;
-        await SincronizarModalidades(materia, request.ModalidadIds, cancellationToken);
+        await SincronizarModalidades(
+            dbContext,
+            materia.Id,
+            request.ModalidadIds,            
+            cancellationToken);
         return await GuardarMateria(materia, false, cancellationToken);
     }
 
@@ -127,7 +131,7 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
     public async Task<ActionResult<MateriaDto>> EstadoMateria(
         Guid id, CambiarEstadoPlanRequest request, CancellationToken cancellationToken)
     {
-        var materia = await dbContext.Materias.Include(x => x.Modalidades)
+        var materia = await dbContext.Materias.Include(x => x.MateriasModalidades)
             .ThenInclude(x => x.Modalidad).SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (materia is null) return NotFound();
         if (!Coincide(request.RowVersion, materia.RowVersion)) return Conflicto("La materia");
@@ -136,15 +140,62 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
         return Ok(Mapear(materia));
     }
 
+    private static async Task SincronizarModalidades(
+    ApplicationDbContext dbContext,
+    Guid materiaId,
+    IEnumerable<Guid> modalidadIds,
+    CancellationToken cancellationToken)
+    {
+        var idsSeleccionados = modalidadIds
+            .Distinct()
+            .ToHashSet();
+
+        var relaciones = await dbContext.MateriasModalidades
+            .IgnoreQueryFilters()
+            .Where(x => x.MateriaId == materiaId)
+            .ToListAsync(cancellationToken);
+
+        foreach (var relacion in relaciones)
+        {
+            var seleccionada = idsSeleccionados.Contains(relacion.ModalidadId);
+
+            if (seleccionada && relacion.Eliminado)
+            {
+                // Reactivar relación existente.
+                relacion.Eliminado = false;
+            }
+            else if (!seleccionada && !relacion.Eliminado)
+            {
+                // Dar de baja lógicamente.
+                relacion.Eliminado = true;
+            }
+        }
+
+        var modalidadesExistentes = relaciones
+            .Select(x => x.ModalidadId)
+            .ToHashSet();
+
+        foreach (var modalidadId in idsSeleccionados.Except(modalidadesExistentes))
+        {
+            dbContext.MateriasModalidades.Add(new MateriaModalidad
+            {
+                MateriaId = materiaId,
+                ModalidadId = modalidadId,
+                FechaModifica = DateTime.Now,
+                Eliminado = false
+            });
+        }
+    }
+
     private async Task SincronizarModalidades(
         Materia materia, IEnumerable<Guid> modalidadIds, CancellationToken cancellationToken)
     {
         var ids = modalidadIds.Distinct().ToHashSet();
-        foreach (var actual in materia.Modalidades.Where(x => !ids.Contains(x.ModalidadId)).ToArray())
+        foreach (var actual in materia.MateriasModalidades.Where(x => !ids.Contains(x.ModalidadId)).ToArray())
             dbContext.MateriasModalidades.Remove(actual);
-        var actuales = materia.Modalidades.Select(x => x.ModalidadId).ToHashSet();
+        var actuales = materia.MateriasModalidades.Select(x => x.ModalidadId).ToHashSet();
         foreach (var id in ids.Where(x => !actuales.Contains(x)))
-            materia.Modalidades.Add(new MateriaModalidad { ModalidadId = id });
+            materia.MateriasModalidades.Add(new MateriaModalidad { ModalidadId = id });
     }
 
     private async Task<string?> ValidarMateria(
@@ -175,7 +226,7 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
-            await dbContext.Entry(materia).Collection(x => x.Modalidades).Query()
+            await dbContext.Entry(materia).Collection(x => x.MateriasModalidades).Query()
                 .Include(x => x.Modalidad).LoadAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException) { return Conflicto("La materia"); }
@@ -206,7 +257,7 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
     private static MateriaDto Mapear(Materia x) => new(
         x.Id, x.ReticulaId, x.Clave, x.Nombre, x.Semestre, x.Creditos,
         x.HorasTeoricas, x.HorasPracticas, x.HorasSemanales, x.Activo,
-        x.Modalidades.Where(m => !m.Eliminado).OrderBy(m => m.Modalidad.Nombre)
+        x.MateriasModalidades.Where(m => !m.Eliminado).OrderBy(m => m.Modalidad.Nombre)
             .Select(m => new ModalidadPlanDto(m.ModalidadId, m.Modalidad.Clave, m.Modalidad.Nombre)).ToArray(),
         Convert.ToBase64String(x.RowVersion));
 

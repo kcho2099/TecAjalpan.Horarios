@@ -32,7 +32,7 @@ public sealed class Materia : CatalogoAuditable
     public byte HorasTeoricas { get; set; }
     public byte HorasPracticas { get; set; }
     public byte HorasSemanales { get; set; }
-    public ICollection<MateriaModalidad> Modalidades { get; set; } = [];
+    public ICollection<MateriaModalidad> MateriasModalidades { get; set; } = [];
 }
 
 public sealed class MateriaModalidad : EntidadAuditable
