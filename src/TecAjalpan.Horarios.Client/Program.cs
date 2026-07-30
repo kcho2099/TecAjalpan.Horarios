@@ -7,6 +7,7 @@ using TecAjalpan.Horarios.Client.Auth;
 using TecAjalpan.Horarios.Client.Carreras;
 using TecAjalpan.Horarios.Client.Docentes;
 using TecAjalpan.Horarios.Client.Periodos;
+using TecAjalpan.Horarios.Client.PlanesEstudio;
 using TecAjalpan.Horarios.Client.Usuarios;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
@@ -29,6 +30,7 @@ builder.Services.AddScoped<BitacoraApi>();
 builder.Services.AddScoped<CarrerasApi>();
 builder.Services.AddScoped<DocentesApi>();
 builder.Services.AddScoped<PeriodosApi>();
+builder.Services.AddScoped<PlanesEstudioApi>();
 builder.Services.AddScoped<UsuariosApi>();
 builder.Services.AddScoped<EstadoAutenticacion>();
 builder.Services.AddScoped<AuthenticationStateProvider>(

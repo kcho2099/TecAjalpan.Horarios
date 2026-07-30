@@ -894,6 +894,45 @@ main {
   backdrop-filter: blur(2px);
 }
 
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 23, 42, .38);
+  backdrop-filter: blur(2px);
+}
+
+.loading-card {
+  min-width: 260px;
+  padding: 1.4rem 1.7rem;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, .24);
+  display: grid;
+  justify-items: center;
+  gap: .55rem;
+}
+
+.loading-card small,
+.loading-hint {
+  color: var(--gris);
+}
+
+.loading-spinner {
+  width: 34px;
+  height: 34px;
+  border: 4px solid #dbeafe;
+  border-top-color: var(--vino);
+  border-radius: 50%;
+  animation: loading-spin .75s linear infinite;
+}
+
+@keyframes loading-spin {
+  to { transform: rotate(360deg); }
+}
+
 .modal-card {
   width: min(650px, 100%);
   max-height: calc(100vh - 48px);
@@ -1557,4 +1596,70 @@ main {
 .validation-inbox-item small {
   margin-top: .2rem;
   color: var(--gris);
+}
+
+
+.modality-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.modality-option {
+  min-width: 180px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease;
+}
+
+.modality-option:hover,
+.modality-option:has(input:checked) {
+  border-color: #b7686b;
+  background: #fcf6f6;
+}
+
+.modality-option:has(input:checked) {
+  box-shadow: 0 0 0 2px rgba(130, 36, 39, .08);
+}
+
+.modality-option input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  margin: 0;
+  padding: 0;
+  appearance: none;
+  border: 2px solid #aaa4a3;
+  border-radius: 6px;
+  background-color: #fff;
+  background-position: center;
+  background-repeat: no-repeat;
+  cursor: pointer;
+  transition: border-color .16s ease, background-color .16s ease, transform .16s ease;
+}
+
+.modality-option input[type="checkbox"]:checked {
+  border-color: var(--vino);
+  background-color: var(--vino);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Cpath d='M3 7.2 5.7 10 11 4.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.modality-option input[type="checkbox"]:focus-visible {
+  outline: 3px solid rgba(130, 36, 39, .2);
+  outline-offset: 3px;
+}
+
+.modality-option input[type="checkbox"]:active {
+  transform: scale(.92);
+}
+
+.modality-option span {
+  font-size: 14px;
+  font-weight: 700;
 }

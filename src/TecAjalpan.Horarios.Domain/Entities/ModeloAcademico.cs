@@ -29,7 +29,18 @@ public sealed class Materia : CatalogoAuditable
     public Reticula Reticula { get; set; } = null!;
     public byte Semestre { get; set; }
     public byte Creditos { get; set; }
+    public byte HorasTeoricas { get; set; }
+    public byte HorasPracticas { get; set; }
     public byte HorasSemanales { get; set; }
+    public ICollection<MateriaModalidad> MateriasModalidades { get; set; } = [];
+}
+
+public sealed class MateriaModalidad : EntidadAuditable
+{
+    public Guid MateriaId { get; set; }
+    public Materia Materia { get; set; } = null!;
+    public Guid ModalidadId { get; set; }
+    public Modalidad Modalidad { get; set; } = null!;
 }
 
 public sealed class Periodo : EntidadAuditable
