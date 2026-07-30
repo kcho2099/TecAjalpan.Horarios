@@ -51,6 +51,26 @@ public sealed class OfertaAcademicaApi(HttpClient httpClient)
             HttpMethod.Put, $"api/oferta-academica/grupos/{grupoId}/materias",
             request, cancellationToken);
 
+    public Task<ResultadoOferta<bool>> EliminarConfiguracionAsync(
+        Guid configuracionId,
+        string rowVersion,
+        CancellationToken cancellationToken = default) =>
+        EnviarSinRespuestaAsync(
+            HttpMethod.Delete,
+            $"api/oferta-academica/configuraciones/{configuracionId}",
+            new EliminarOfertaRequest { RowVersion = rowVersion },
+            cancellationToken);
+
+    public Task<ResultadoOferta<bool>> EliminarGrupoAsync(
+        Guid grupoId,
+        string rowVersion,
+        CancellationToken cancellationToken = default) =>
+        EnviarSinRespuestaAsync(
+            HttpMethod.Delete,
+            $"api/oferta-academica/grupos/{grupoId}",
+            new EliminarOfertaRequest { RowVersion = rowVersion },
+            cancellationToken);
+
     private async Task<ResultadoOferta<TResponse>> EnviarAsync<TRequest, TResponse>(
         HttpMethod metodo,
         string url,
@@ -71,6 +91,24 @@ public sealed class OfertaAcademicaApi(HttpClient httpClient)
                     cancellationToken: cancellationToken));
         }
         return new(false, await LeerMensajeAsync(response, cancellationToken), default);
+    }
+
+    private async Task<ResultadoOferta<bool>> EnviarSinRespuestaAsync<TRequest>(
+        HttpMethod metodo,
+        string url,
+        TRequest contenido,
+        CancellationToken cancellationToken)
+    {
+        var token = await ObtenerAntiforgeryAsync(cancellationToken);
+        using var message = new HttpRequestMessage(metodo, url)
+        {
+            Content = JsonContent.Create(contenido)
+        };
+        message.Headers.TryAddWithoutValidation("X-XSRF-TOKEN", token);
+        using var response = await httpClient.SendAsync(message, cancellationToken);
+        return response.IsSuccessStatusCode
+            ? new(true, null, true)
+            : new(false, await LeerMensajeAsync(response, cancellationToken), false);
     }
 
     private async Task<string> ObtenerAntiforgeryAsync(CancellationToken cancellationToken)
