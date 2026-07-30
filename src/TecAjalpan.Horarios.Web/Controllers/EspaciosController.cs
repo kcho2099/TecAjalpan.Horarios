@@ -212,13 +212,12 @@ public sealed class EspaciosController(
 
         var clave = request.Clave.Trim().ToUpperInvariant();
         var claveDuplicada = await dbContext.Espacios.AnyAsync(
-            x => x.CarreraId == request.CarreraId
-                && x.Clave == clave
+            x => x.Clave == clave
                 && (!espacioId.HasValue || x.Id != espacioId.Value),
             cancellationToken);
         if (claveDuplicada)
         {
-            return "Ya existe un aula o laboratorio con esa clave en la carrera.";
+            return "Ya existe un aula o laboratorio con esa clave.";
         }
 
         return null;
@@ -241,15 +240,17 @@ public sealed class EspaciosController(
         {
             return Conflict(new
             {
-                mensaje = "Ya existe un aula o laboratorio con esa clave en la carrera."
+                mensaje = "Ya existe un aula o laboratorio con esa clave."
             });
         }
 
-        var referenciaCarrera = dbContext.Entry(espacio).Reference(x => x.Carrera);
-        referenciaCarrera.IsLoaded = false;
-        await referenciaCarrera.LoadAsync(cancellationToken);
+        var carrera = await dbContext.Carreras
+            .AsNoTracking()
+            .Where(x => x.Id == espacio.CarreraId)
+            .Select(x => new { x.Clave, x.Nombre })
+            .SingleAsync(cancellationToken);
 
-        var dto = Mapear(espacio);
+        var dto = Mapear(espacio, carrera.Clave, carrera.Nombre);
         return creado
             ? CreatedAtAction(nameof(Listar), dto)
             : Ok(dto);
@@ -283,11 +284,17 @@ public sealed class EspaciosController(
     }
 
     private static EspacioDto Mapear(Espacio espacio) =>
+        Mapear(espacio, espacio.Carrera.Clave, espacio.Carrera.Nombre);
+
+    private static EspacioDto Mapear(
+        Espacio espacio,
+        string carreraClave,
+        string carreraNombre) =>
         new(
             espacio.Id,
             espacio.CarreraId,
-            espacio.Carrera.Clave,
-            espacio.Carrera.Nombre,
+            carreraClave,
+            carreraNombre,
             espacio.Clave,
             espacio.Nombre,
             espacio.Tipo,
