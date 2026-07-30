@@ -379,10 +379,11 @@ public sealed class OfertaAcademicaController(
         var espacioOcupado = await dbContext.Grupos.AnyAsync(x =>
             x.EspacioBaseId == request.EspacioBaseId
             && x.PeriodoCarrera.PeriodoId == configuracion.PeriodoId
+            && x.PeriodoCarrera.ModalidadId == configuracion.ModalidadId
             && (!grupoId.HasValue || x.Id != grupoId.Value),
             cancellationToken);
         if (espacioOcupado)
-            return "El aula o laboratorio ya está asignado a otro grupo en este periodo.";
+            return "El aula o laboratorio ya está asignado a otro grupo de la misma modalidad en este periodo.";
         return null;
     }
 
@@ -392,10 +393,10 @@ public sealed class OfertaAcademicaController(
         try { await dbContext.SaveChangesAsync(cancellationToken); }
         catch (DbUpdateConcurrencyException) { return Conflicto("El grupo"); }
         catch (DbUpdateException) { return Conflict(new { mensaje = "Ya existe esa clave de grupo." }); }
-        var referenciaEspacio = dbContext.Entry(grupo).Reference(x => x.EspacioBase);
-        referenciaEspacio.IsLoaded = false;
-        await referenciaEspacio.LoadAsync(cancellationToken);
-        return creado ? Created("api/oferta-academica/grupos", Mapear(grupo)) : Ok(Mapear(grupo));
+        var espacio = await dbContext.Espacios.AsNoTracking()
+            .SingleAsync(x => x.Id == grupo.EspacioBaseId, cancellationToken);
+        var resultado = Mapear(grupo, espacio);
+        return creado ? Created("api/oferta-academica/grupos", resultado) : Ok(resultado);
     }
 
     private async Task CargarConfiguracion(
@@ -431,9 +432,14 @@ public sealed class OfertaAcademicaController(
             .ToArray(),
         Convert.ToBase64String(x.RowVersion));
 
-    private static GrupoOfertaDto Mapear(Grupo x) => new(
+    private static GrupoOfertaDto Mapear(Grupo x) => Mapear(x, x.EspacioBase);
+
+    private static GrupoOfertaDto Mapear(Grupo x, Espacio? espacio) => new(
         x.Id, x.Semestre, x.Clave, x.Nombre,
-        x.EspacioBaseId, x.EspacioBase?.Clave, x.EspacioBase?.Nombre, x.EspacioBase?.Tipo,
+        x.EspacioBaseId,
+        espacio?.Clave ?? x.EspacioBase?.Clave,
+        espacio?.Nombre ?? x.EspacioBase?.Nombre,
+        espacio?.Tipo ?? x.EspacioBase?.Tipo,
         x.Oferta.Where(o => !o.Eliminado && o.Activa).OrderBy(o => o.Materia.Nombre)
             .Select(o => new MateriaOfertaDto(
                 o.Id, o.MateriaId, o.Materia.Clave, o.Materia.Nombre,
