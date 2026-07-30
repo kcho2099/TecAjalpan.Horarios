@@ -1467,6 +1467,105 @@ main {
   line-height: 1.35;
 }
 
+.oferta-filtros {
+  display: flex;
+  align-items: end;
+  gap: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.oferta-filtros .form-field {
+  min-width: min(100%, 360px);
+}
+
+.oferta-periodo-resumen {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .7rem;
+  min-height: 44px;
+}
+
+.oferta-periodo-resumen small {
+  color: var(--gris);
+}
+
+.oferta-grid {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.oferta-card .panel-title {
+  margin-bottom: 1rem;
+}
+
+.oferta-grupos {
+  display: grid;
+  gap: .75rem;
+}
+
+.oferta-grupo {
+  border: 1px solid var(--borde);
+  border-radius: 14px;
+  padding: 1rem;
+  background: #fff;
+}
+
+.oferta-grupo-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.oferta-grupo-header small {
+  display: block;
+  color: var(--gris);
+  margin-top: .2rem;
+}
+
+.oferta-materias-resumen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem;
+  margin-top: .8rem;
+}
+
+.oferta-materias-resumen span {
+  background: #f6eeee;
+  border: 1px solid #ead6d7;
+  border-radius: 999px;
+  color: #6c1d20;
+  font-size: .78rem;
+  font-weight: 700;
+  padding: .35rem .65rem;
+}
+
+.oferta-materias-modal {
+  width: min(760px, calc(100vw - 2rem));
+}
+
+.oferta-selector-materias {
+  display: grid;
+  gap: .65rem;
+  max-height: 52vh;
+  overflow-y: auto;
+  padding: .2rem;
+}
+
+.modal-help {
+  color: var(--gris);
+  margin-top: 0;
+}
+
+@media (max-width: 720px) {
+  .oferta-filtros,
+  .oferta-grupo-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .career-selector .career-card {
   grid-template-columns: minmax(0, 1fr) 22px auto;
   cursor: default;
