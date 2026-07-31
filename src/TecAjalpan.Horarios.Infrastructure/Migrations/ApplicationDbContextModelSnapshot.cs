@@ -297,6 +297,9 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                     b.Property<DateTime>("FechaCrea")
                         .HasColumnType("datetime2");
 
+                    b.Property<byte>("HorasAsignadas")
+                        .HasColumnType("tinyint");
+
                     b.Property<DateTime?>("FechaElimina")
                         .HasColumnType("datetime2");
 
@@ -308,6 +311,9 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
 
                     b.Property<Guid>("OfertaMateriaId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte>("Rol")
+                        .HasColumnType("tinyint");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -332,7 +338,7 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
 
                     b.HasIndex("DocenteId");
 
-                    b.HasIndex("OfertaMateriaId")
+                    b.HasIndex("OfertaMateriaId", "Rol")
                         .IsUnique()
                         .HasFilter("[Eliminado] = 0");
 
