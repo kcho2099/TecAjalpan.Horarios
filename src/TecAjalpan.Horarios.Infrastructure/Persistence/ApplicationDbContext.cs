@@ -255,7 +255,7 @@ public sealed class ApplicationDbContext(
         modelBuilder.Entity<CargaAcademica>(entity =>
         {
             entity.ToTable("CargasAcademicas", "Operacion");
-            entity.HasIndex(x => x.OfertaMateriaId)
+            entity.HasIndex(x => new { x.OfertaMateriaId, x.Rol })
                 .IsUnique()
                 .HasFilter("[Eliminado] = 0");
         });
