@@ -1,0 +1,503 @@
+@page "/espacios"
+@attribute [Authorize(Roles = "Administrador,Jefatura,Subdirección Académica")]
+@inject EspaciosApi Api
+
+<PageTitle>Aulas y laboratorios | Horarios Tec Ajalpan</PageTitle>
+
+<div class="page-heading">
+  <div>
+    <span class="eyebrow">Recursos académicos</span>
+    <h1>Aulas y laboratorios</h1>
+    <p>Administra los espacios exclusivos de cada carrera y disponibles para sus grupos.</p>
+  </div>
+  <button class="btn-primary" @onclick="NuevoEspacio" disabled="@Ocupado">
+    + Nuevo espacio
+  </button>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(mensaje))
+{
+  <div class="alerta-exito">@mensaje</div>
+}
+@if (!string.IsNullOrWhiteSpace(error))
+{
+  <div class="alerta-error">@error</div>
+}
+
+<article class="panel catalogo-panel">
+  <div class="toolbar">
+    <label class="search-box">
+      <span>Buscar</span>
+      <input @bind="Filtro" @bind:event="oninput"
+             placeholder="Clave, nombre, tipo o especialidad…" />
+    </label>
+    @if (carreras.Count > 1)
+    {
+      <label class="form-field">
+        <span>Carrera</span>
+        <select @bind="CarreraFiltro">
+          <option value="">Todas las carreras</option>
+          @foreach (var carrera in carreras)
+          {
+            <option value="@carrera.Id">@carrera.Clave - @carrera.Nombre</option>
+          }
+        </select>
+      </label>
+    }
+    <span class="record-count">@EspaciosFiltrados.Count() espacio(s)</span>
+  </div>
+
+  @if (cargando)
+  {
+    <div class="table-state">Cargando aulas y laboratorios…</div>
+  }
+  else if (!EspaciosFiltrados.Any())
+  {
+    <div class="empty-state compact">
+      <div class="empty-icon">▣</div>
+      <h2>No hay espacios para mostrar</h2>
+      <p>Registra las aulas y laboratorios que pertenecen a la carrera.</p>
+      @if (CarrerasActivas.Any())
+      {
+        <button class="btn-secondary" @onclick="NuevoEspacio">Crear espacio</button>
+      }
+    </div>
+  }
+  else
+  {
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Clave</th>
+            <th>Espacio</th>
+            <th>Carrera</th>
+            <th>Tipo</th>
+            <th>Capacidad</th>
+            <th>Especialidad</th>
+            <th>Estado</th>
+            <th class="actions-column">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          @foreach (var espacio in EspaciosPaginados)
+          {
+            <tr class="@(!espacio.Activo ? "row-inactive" : null)">
+              <td><strong>@espacio.Clave</strong></td>
+              <td>@espacio.Nombre</td>
+              <td>
+                <strong>@espacio.CarreraClave</strong>
+                <small>@espacio.CarreraNombre</small>
+              </td>
+              <td>@espacio.Tipo</td>
+              <td>@(espacio.Capacidad?.ToString() ?? "Sin especificar")</td>
+              <td>@(espacio.Especialidad ?? "Sin especificar")</td>
+              <td>
+                <span class="status @(espacio.Activo ? "status-active" : "status-closed")">
+                  @(espacio.Activo ? "Activo" : "Inactivo")
+                </span>
+              </td>
+              <td class="actions-column catalogo-actions">
+                <button class="btn-link" @onclick="() => Editar(espacio)"
+                        disabled="@Ocupado">Editar</button>
+                <button class="btn-link" @onclick="() => ConfirmarEstado(espacio)"
+                        disabled="@Ocupado">
+                  @(espacio.Activo ? "Desactivar" : "Activar")
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <Paginador TotalRegistros="@EspaciosFiltrados.Count()"
+                PaginaActual="@paginaActual"
+                PaginaActualChanged="CambiarPagina"
+                TamanoPagina="@TamanoPagina" />
+  }
+</article>
+
+@if (mostrarFormulario)
+{
+  <div class="modal-backdrop" @onclick="CerrarFormulario">
+    <section class="modal-card" role="dialog" aria-modal="true"
+             aria-labelledby="titulo-espacio" @onclick:stopPropagation>
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">@(espacioId.HasValue ? "Editar registro" : "Nuevo registro")</span>
+          <h2 id="titulo-espacio">
+            @(espacioId.HasValue ? "Editar aula o laboratorio" : "Crear aula o laboratorio")
+          </h2>
+        </div>
+        <button class="icon-button" type="button" title="Cerrar"
+                @onclick="CerrarFormulario" disabled="@procesando">×</button>
+      </div>
+
+      <EditForm Model="modelo" OnValidSubmit="Guardar">
+        <DataAnnotationsValidator />
+        <div class="form-grid catalogo-form-grid">
+          <div class="form-field full">
+            <label for="carrera">Carrera propietaria</label>
+            <InputSelect id="carrera" @bind-Value="modelo.CarreraId"
+                         disabled="@(carreras.Count == 1)">
+              <option value="@Guid.Empty">Selecciona una carrera</option>
+              @foreach (var carrera in CarrerasFormulario)
+              {
+                <option value="@carrera.Id">@carrera.Clave - @carrera.Nombre</option>
+              }
+            </InputSelect>
+            <ValidationMessage For="() => modelo.CarreraId" />
+            <small>El espacio será visible y utilizable únicamente por esta carrera.</small>
+          </div>
+          <div class="form-field">
+            <label for="clave">Clave</label>
+            <InputText id="clave" @bind-Value="modelo.Clave"
+                       placeholder="Ej. LAB-ISC-01" />
+            <ValidationMessage For="() => modelo.Clave" />
+          </div>
+          <div class="form-field">
+            <label for="tipo">Tipo</label>
+            <InputSelect id="tipo" @bind-Value="modelo.Tipo">
+              <option value="Aula">Aula</option>
+              <option value="Laboratorio">Laboratorio</option>
+            </InputSelect>
+            <ValidationMessage For="() => modelo.Tipo" />
+          </div>
+          <div class="form-field full">
+            <label for="nombre">Nombre</label>
+            <InputText id="nombre" @bind-Value="modelo.Nombre"
+                       placeholder="Ej. Laboratorio de cómputo 1" />
+            <ValidationMessage For="() => modelo.Nombre" />
+          </div>
+          <div class="form-field">
+            <label for="capacidad">Capacidad</label>
+            <InputNumber id="capacidad" @bind-Value="modelo.Capacidad"
+                         placeholder="Ej. 35" />
+            <ValidationMessage For="() => modelo.Capacidad" />
+          </div>
+          <div class="form-field">
+            <label for="especialidad">Especialidad</label>
+            <InputText id="especialidad" @bind-Value="modelo.Especialidad"
+                       placeholder="Ej. Cómputo, electrónica…" />
+            <ValidationMessage For="() => modelo.Especialidad" />
+          </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(errorFormulario))
+        {
+          <div class="alerta-error modal-alert">@errorFormulario</div>
+        }
+        <div class="modal-actions">
+          <button class="btn-ghost" type="button" @onclick="CerrarFormulario"
+                  disabled="@procesando">Cancelar</button>
+          <button class="btn-primary" type="submit" disabled="@procesando">
+            @(procesando ? "Guardando…" : "Guardar espacio")
+          </button>
+        </div>
+      </EditForm>
+    </section>
+  </div>
+}
+
+@if (espacioAccion is not null)
+{
+  <div class="modal-backdrop" @onclick="CancelarEstado">
+    <section class="modal-card confirm-card" role="dialog" aria-modal="true"
+             @onclick:stopPropagation>
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">Confirmar cambio</span>
+          <h2>@(espacioAccion.Activo ? "Desactivar espacio" : "Activar espacio")</h2>
+        </div>
+        <button class="icon-button" type="button" title="Cerrar"
+                @onclick="CancelarEstado" disabled="@procesando">×</button>
+      </div>
+      <p>
+        @(espacioAccion.Activo
+          ? $"{espacioAccion.Nombre} dejará de estar disponible para nuevas asignaciones."
+          : $"{espacioAccion.Nombre} volverá a estar disponible para los grupos de {espacioAccion.CarreraNombre}.")
+      </p>
+      @if (espacioAccion.Activo)
+      {
+        <p class="loading-hint">
+          No se desactivará si todavía está asignado a un grupo de una oferta vigente.
+        </p>
+      }
+      @if (!string.IsNullOrWhiteSpace(errorAccion))
+      {
+        <div class="alerta-error">@errorAccion</div>
+      }
+      <div class="modal-actions">
+        <button class="btn-ghost" type="button" @onclick="CancelarEstado"
+                disabled="@procesando">Cancelar</button>
+        <button class="btn-primary" type="button" disabled="@procesando"
+                @onclick="CambiarEstado">
+          @(procesando
+            ? "Procesando…"
+            : espacioAccion.Activo ? "Desactivar" : "Activar")
+        </button>
+      </div>
+    </section>
+  </div>
+}
+
+@if (procesando)
+{
+  <div class="loading-overlay" role="status" aria-live="polite" aria-busy="true">
+    <div class="loading-card">
+      <span class="loading-spinner"></span>
+      <strong>@mensajeCarga</strong>
+      <small>Espera un momento.</small>
+    </div>
+  </div>
+}
+
+@code {
+  private const int TamanoPagina = 10;
+  private List<EspacioCarreraDto> carreras = [];
+  private List<EspacioDto> espacios = [];
+  private GuardarEspacioRequest modelo = new();
+  private Guid? espacioId;
+  private EspacioDto? espacioAccion;
+  private Guid? carreraFiltro;
+  private string filtro = string.Empty;
+  private string mensajeCarga = "Procesando…";
+  private int paginaActual = 1;
+  private bool cargando = true;
+  private bool procesando;
+  private bool mostrarFormulario;
+  private string? mensaje;
+  private string? error;
+  private string? errorFormulario;
+  private string? errorAccion;
+
+  private bool Ocupado => cargando || procesando;
+
+  private string Filtro
+  {
+    get => filtro;
+    set
+    {
+      if (!string.Equals(filtro, value, StringComparison.Ordinal))
+      {
+        filtro = value;
+        paginaActual = 1;
+      }
+    }
+  }
+
+  private Guid? CarreraFiltro
+  {
+    get => carreraFiltro;
+    set
+    {
+      if (carreraFiltro != value)
+      {
+        carreraFiltro = value;
+        paginaActual = 1;
+      }
+    }
+  }
+
+  private IEnumerable<EspacioCarreraDto> CarrerasActivas =>
+    carreras.Where(x => x.Activo);
+
+  private IEnumerable<EspacioCarreraDto> CarrerasFormulario =>
+    carreras.Where(x => x.Activo || x.Id == modelo.CarreraId);
+
+  private IEnumerable<EspacioDto> EspaciosFiltrados =>
+    espacios.Where(x =>
+      (!carreraFiltro.HasValue || x.CarreraId == carreraFiltro.Value)
+      && (string.IsNullOrWhiteSpace(filtro)
+        || x.Clave.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+        || x.Nombre.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+        || x.CarreraNombre.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+        || x.Tipo.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+        || (x.Especialidad?.Contains(
+              filtro,
+              StringComparison.OrdinalIgnoreCase) ?? false)
+        || (x.Activo ? "Activo" : "Inactivo")
+            .Contains(filtro, StringComparison.OrdinalIgnoreCase)));
+
+  private IEnumerable<EspacioDto> EspaciosPaginados =>
+    EspaciosFiltrados
+      .Skip((paginaActual - 1) * TamanoPagina)
+      .Take(TamanoPagina);
+
+  protected override async Task OnInitializedAsync()
+  {
+    try
+    {
+      var catalogo = await Api.ListarAsync();
+      carreras = catalogo.Carreras.ToList();
+      espacios = catalogo.Espacios.ToList();
+      if (carreras.Count == 1)
+      {
+        carreraFiltro = carreras[0].Id;
+      }
+    }
+    catch (Exception ex)
+    {
+      error = $"No fue posible cargar las aulas y laboratorios: {ex.Message}";
+    }
+    finally
+    {
+      cargando = false;
+    }
+  }
+
+  private void NuevoEspacio()
+  {
+    var carrerasActivas = CarrerasActivas.ToArray();
+    if (carrerasActivas.Length == 0)
+    {
+      error = "No tienes una carrera activa disponible para registrar espacios.";
+      return;
+    }
+
+    espacioId = null;
+    modelo = new GuardarEspacioRequest
+    {
+      CarreraId = carreraFiltro.HasValue
+          && carrerasActivas.Any(x => x.Id == carreraFiltro.Value)
+        ? carreraFiltro.Value
+        : carrerasActivas.Length == 1
+          ? carrerasActivas[0].Id
+          : Guid.Empty,
+      Tipo = "Aula"
+    };
+    errorFormulario = null;
+    mostrarFormulario = true;
+  }
+
+  private void Editar(EspacioDto espacio)
+  {
+    espacioId = espacio.Id;
+    modelo = new GuardarEspacioRequest
+    {
+      CarreraId = espacio.CarreraId,
+      Clave = espacio.Clave,
+      Nombre = espacio.Nombre,
+      Tipo = espacio.Tipo,
+      Capacidad = espacio.Capacidad,
+      Especialidad = espacio.Especialidad,
+      RowVersion = espacio.RowVersion
+    };
+    errorFormulario = null;
+    mostrarFormulario = true;
+  }
+
+  private async Task Guardar()
+  {
+    procesando = true;
+    mensajeCarga = espacioId.HasValue
+      ? "Actualizando espacio…"
+      : "Creando espacio…";
+    errorFormulario = null;
+    mensaje = null;
+    try
+    {
+      var resultado = await Api.GuardarAsync(espacioId, modelo);
+      if (!resultado.Correcto || resultado.Espacio is null)
+      {
+        errorFormulario = resultado.Mensaje;
+        return;
+      }
+
+      ActualizarLista(resultado.Espacio);
+      mensaje = espacioId.HasValue
+        ? "Aula o laboratorio actualizado correctamente."
+        : "Aula o laboratorio creado correctamente.";
+      mostrarFormulario = false;
+    }
+    catch (Exception ex)
+    {
+      errorFormulario = $"No fue posible guardar: {ex.Message}";
+    }
+    finally
+    {
+      procesando = false;
+    }
+  }
+
+  private void ConfirmarEstado(EspacioDto espacio)
+  {
+    espacioAccion = espacio;
+    errorAccion = null;
+  }
+
+  private async Task CambiarEstado()
+  {
+    if (espacioAccion is null)
+    {
+      return;
+    }
+
+    procesando = true;
+    mensajeCarga = espacioAccion.Activo
+      ? "Desactivando espacio…"
+      : "Activando espacio…";
+    errorAccion = null;
+    mensaje = null;
+    try
+    {
+      var resultado = await Api.CambiarEstadoAsync(espacioAccion);
+      if (!resultado.Correcto || resultado.Espacio is null)
+      {
+        errorAccion = resultado.Mensaje;
+        return;
+      }
+
+      ActualizarLista(resultado.Espacio);
+      mensaje = resultado.Espacio.Activo
+        ? "Espacio activado correctamente."
+        : "Espacio desactivado correctamente.";
+      espacioAccion = null;
+    }
+    catch (Exception ex)
+    {
+      errorAccion = $"No fue posible cambiar el estado: {ex.Message}";
+    }
+    finally
+    {
+      procesando = false;
+    }
+  }
+
+  private void ActualizarLista(EspacioDto espacio)
+  {
+    var indice = espacios.FindIndex(x => x.Id == espacio.Id);
+    if (indice >= 0)
+    {
+      espacios[indice] = espacio;
+    }
+    else
+    {
+      espacios.Add(espacio);
+    }
+
+    espacios = espacios
+      .OrderBy(x => x.CarreraNombre)
+      .ThenByDescending(x => x.Activo)
+      .ThenBy(x => x.Nombre)
+      .ToList();
+  }
+
+  private void CambiarPagina(int pagina) => paginaActual = pagina;
+
+  private void CerrarFormulario()
+  {
+    if (!procesando)
+    {
+      mostrarFormulario = false;
+    }
+  }
+
+  private void CancelarEstado()
+  {
+    if (!procesando)
+    {
+      espacioAccion = null;
+    }
+  }
+}

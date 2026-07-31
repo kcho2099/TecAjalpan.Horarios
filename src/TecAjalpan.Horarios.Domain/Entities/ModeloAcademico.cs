@@ -70,6 +70,8 @@ public sealed class Grupo : EntidadAuditable
 {
     public Guid PeriodoCarreraId { get; set; }
     public PeriodoCarrera PeriodoCarrera { get; set; } = null!;
+    public Guid? EspacioBaseId { get; set; }
+    public Espacio? EspacioBase { get; set; }
     public byte Semestre { get; set; }
     public string Clave { get; set; } = string.Empty;
     public string Nombre { get; set; } = string.Empty;

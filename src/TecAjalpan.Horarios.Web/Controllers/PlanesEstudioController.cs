@@ -122,6 +122,10 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
             materia.Id,
             request.ModalidadIds,
             cancellationToken);
+        await SincronizarOfertasMateria(
+            materia,
+            request.ModalidadIds,
+            cancellationToken);
         return await GuardarMateria(materia, false, cancellationToken);
     }
 
@@ -135,6 +139,8 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
         if (materia is null) return NotFound();
         if (!Coincide(request.RowVersion, materia.RowVersion)) return Conflicto("La materia");
         materia.Activo = request.Activo;
+        if (!request.Activo)
+            await SincronizarOfertasMateria(materia, [], cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         return Ok(Mapear(materia));
     }
@@ -200,6 +206,42 @@ public sealed class PlanesEstudioController(ApplicationDbContext dbContext) : Co
         var validas = await dbContext.Modalidades.CountAsync(
             x => ids.Contains(x.Id) && x.Activo, cancellationToken);
         return validas == ids.Length ? null : "Una modalidad no existe o está inactiva.";
+    }
+
+    private async Task SincronizarOfertasMateria(
+        Materia materia,
+        IEnumerable<Guid> modalidadIds,
+        CancellationToken cancellationToken)
+    {
+        var modalidadesValidas = modalidadIds.Distinct().ToHashSet();
+        var carreraId = await dbContext.Reticulas
+            .Where(x => x.Id == materia.ReticulaId)
+            .Select(x => x.CarreraId)
+            .SingleAsync(cancellationToken);
+
+        var ofertas = await dbContext.OfertasMaterias
+            .IgnoreQueryFilters()
+            .Include(x => x.Grupo)
+                .ThenInclude(x => x.PeriodoCarrera)
+            .Where(x => x.MateriaId == materia.Id && !x.Eliminado)
+            .ToListAsync(cancellationToken);
+
+        foreach (var oferta in ofertas)
+        {
+            var compatible = materia.Activo
+                && oferta.Grupo.Semestre == materia.Semestre
+                && oferta.Grupo.PeriodoCarrera.CarreraId == carreraId
+                && modalidadesValidas.Contains(
+                    oferta.Grupo.PeriodoCarrera.ModalidadId);
+
+            if (!compatible)
+            {
+                dbContext.OfertasMaterias.Remove(oferta);
+                continue;
+            }
+
+            oferta.HorasRequeridas = materia.HorasSemanales;
+        }
     }
 
     private async Task<ActionResult<ReticulaDto>> GuardarReticula(

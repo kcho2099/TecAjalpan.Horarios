@@ -144,6 +144,9 @@ public sealed class ApplicationDbContext(
             entity.ToTable("Grupos", "Academico");
             entity.Property(x => x.Clave).HasMaxLength(30);
             entity.Property(x => x.Nombre).HasMaxLength(120);
+            entity.HasOne(x => x.EspacioBase).WithMany()
+                .HasForeignKey(x => x.EspacioBaseId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => x.EspacioBaseId);
             entity.HasIndex(x => new { x.PeriodoCarreraId, x.Clave }).IsUnique();
         });
         modelBuilder.Entity<OfertaMateria>(entity =>
