@@ -36,6 +36,12 @@ public enum EstadoCarga : byte
     Devuelta = 3
 }
 
+public enum RolCargaAcademica : byte
+{
+    Titular = 1,
+    PracticasLaboratorio = 2
+}
+
 public enum EstadoHorario : byte
 {
     Borrador = 1,
