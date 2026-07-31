@@ -85,6 +85,8 @@ public sealed class CargaAcademica : EntidadAuditable
     public OfertaMateria OfertaMateria { get; set; } = null!;
     public Guid DocenteId { get; set; }
     public Docente Docente { get; set; } = null!;
+    public RolCargaAcademica Rol { get; set; } = RolCargaAcademica.Titular;
+    public byte HorasAsignadas { get; set; }
     public EstadoCarga Estado { get; set; } = EstadoCarga.Borrador;
     public string? Observaciones { get; set; }
     public DateTime? FechaAutorizacion { get; set; }
