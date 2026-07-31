@@ -10,6 +10,167 @@
   --papel: #fff;
 }
 
+.carga-filtros {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(210px, 1fr));
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.carga-filtros select {
+  width: 100%;
+}
+
+.carga-resumen {
+  display: grid;
+  min-width: 180px;
+  padding: 14px 18px;
+  border: 1px solid #d9c4c5;
+  border-radius: 12px;
+  color: var(--vino);
+  background: #fffafa;
+  text-align: right;
+}
+
+.carga-resumen strong {
+  font-size: 22px;
+}
+
+.carga-resumen small {
+  color: var(--gris);
+}
+
+.carga-grupos {
+  display: grid;
+  gap: 20px;
+}
+
+.carga-docentes-panel {
+  margin-bottom: 20px;
+}
+
+.carga-docentes-panel .panel-title small {
+  max-width: 420px;
+  color: var(--gris);
+  text-align: right;
+}
+
+.carga-docentes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.carga-docente-card {
+  display: grid;
+  gap: 9px;
+  padding: 12px 14px;
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+}
+
+.carga-docente-card > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.carga-docente-card small {
+  color: var(--gris);
+  white-space: nowrap;
+}
+
+.carga-barra {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #eee8e7;
+}
+
+.carga-barra span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--vino);
+}
+
+.carga-grupo {
+  overflow: hidden;
+  padding: 0;
+}
+
+.carga-grupo-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--borde);
+}
+
+.carga-grupo-header h2 {
+  margin: 3px 0 4px;
+  font-size: 19px;
+}
+
+.carga-grupo-header small {
+  color: var(--gris);
+}
+
+.carga-table td {
+  vertical-align: middle;
+}
+
+.carga-asignaciones {
+  display: grid;
+  gap: 5px;
+  min-width: 250px;
+}
+
+.carga-asignaciones span {
+  font-size: 13px;
+}
+
+.carga-pendiente {
+  color: #9a3412;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.carga-horas {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 18px;
+  padding: 12px 15px;
+  border: 1px solid;
+  border-radius: 10px;
+}
+
+.carga-horas.is-valid {
+  color: #166534;
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.carga-horas.is-invalid {
+  color: #991b1b;
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+@media (max-width: 900px) {
+  .carga-filtros {
+    grid-template-columns: 1fr;
+  }
+
+  .carga-grupo-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
