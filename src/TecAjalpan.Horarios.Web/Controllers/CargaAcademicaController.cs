@@ -105,48 +105,64 @@ public sealed class CargaAcademicaController(
             .Include(x => x.Docente)
             .ToArrayAsync(cancellationToken);
 
-        var docentesCarreraIds = await dbContext.DocentesCarreras.AsNoTracking()
+        var docentesCarrera = await dbContext.DocentesCarreras.AsNoTracking()
             .Where(x => x.CarreraId == carreraId && x.Docente.Activo)
-            .Select(x => x.DocenteId)
+            .Select(x => new
+            {
+                x.DocenteId,
+                x.Docente.Apellidos,
+                x.Docente.Nombres,
+                x.Docente.Tipo,
+                x.Docente.CargaMaximaSemanal
+            })
             .ToArrayAsync(cancellationToken);
-        var resumenDocentesConsulta = await dbContext.CargasAcademicas.AsNoTracking()
+        var docentesCarreraIds = docentesCarrera
+            .Select(x => x.DocenteId)
+            .ToArray();
+
+        var cargasDocentes = await dbContext.CargasAcademicas.AsNoTracking()
             .Where(x => docentesCarreraIds.Contains(x.DocenteId)
                 && x.OfertaMateria.Activa
                 && x.OfertaMateria.Grupo.PeriodoCarrera.PeriodoId == periodoId)
             .Select(x => new
             {
                 x.DocenteId,
-                x.Docente.Apellidos,
-                x.Docente.Nombres,
-                x.Docente.CargaMaximaSemanal,
                 HorasAsignadas = (int)x.OfertaMateria.HorasRequeridas
             })
-            .GroupBy(x => new
-            {
-                x.DocenteId,
-                x.Apellidos,
-                x.Nombres,
-                x.CargaMaximaSemanal
-            })
+            .GroupBy(x => x.DocenteId)
             .Select(x => new
             {
-                x.Key.DocenteId,
-                x.Key.Apellidos,
-                x.Key.Nombres,
-                x.Key.CargaMaximaSemanal,
+                DocenteId = x.Key,
                 HorasAsignadas = x.Sum(c => c.HorasAsignadas)
             })
-            .OrderByDescending(x => x.HorasAsignadas)
-            .ThenBy(x => x.Apellidos)
-            .ThenBy(x => x.Nombres)
             .ToArrayAsync(cancellationToken);
 
-        var resumenDocentes = resumenDocentesConsulta
-            .Select(x => new CargaDocenteResumenDto(
+        var disponibilidadesAsignatura = await dbContext.DisponibilidadesDocentes
+            .AsNoTracking()
+            .Where(x => docentesCarreraIds.Contains(x.DocenteId)
+                && x.PeriodoId == periodoId
+                && x.Validada)
+            .Select(x => new
+            {
                 x.DocenteId,
-                x.Apellidos + ", " + x.Nombres,
-                x.HorasAsignadas,
-                x.CargaMaximaSemanal))
+                HorasDisponibles = x.Bloques.Count(b => b.Disponible)
+            })
+            .ToArrayAsync(cancellationToken);
+
+        var resumenDocentes = docentesCarrera
+            .Select(docente => new CargaDocenteResumenDto(
+                docente.DocenteId,
+                docente.Apellidos + ", " + docente.Nombres,
+                cargasDocentes
+                    .SingleOrDefault(x => x.DocenteId == docente.DocenteId)
+                    ?.HorasAsignadas ?? 0,
+                docente.Tipo == TipoDocente.Asignatura
+                    ? Convert.ToByte(disponibilidadesAsignatura
+                        .SingleOrDefault(x => x.DocenteId == docente.DocenteId)
+                        ?.HorasDisponibles ?? 0)
+                    : docente.CargaMaximaSemanal))
+            .OrderByDescending(x => x.HorasAsignadas)
+            .ThenBy(x => x.DocenteNombre)
             .ToArray();
 
         return Ok(Mapear(configuracion, asignaciones, resumenDocentes));
@@ -319,11 +335,33 @@ public sealed class CargaAcademicaController(
                     c.CarreraId == oferta.Grupo.PeriodoCarrera.CarreraId))
             .Select(x => new
             {
+                x.Tipo,
                 x.CargaMaximaSemanal
             })
             .SingleOrDefaultAsync(cancellationToken);
         if (docente is null)
             return "El docente debe estar activo y vinculado a la carrera.";
+
+        var cargaMaximaSemanal = docente.CargaMaximaSemanal;
+        if (docente.Tipo == TipoDocente.Asignatura)
+        {
+            var disponibilidad = await dbContext.DisponibilidadesDocentes
+                .AsNoTracking()
+                .Where(x => x.DocenteId == docenteId
+                    && x.PeriodoId == oferta.Grupo.PeriodoCarrera.PeriodoId
+                    && x.Validada)
+                .Select(x => new
+                {
+                    HorasDisponibles = x.Bloques.Count(b => b.Disponible)
+                })
+                .SingleOrDefaultAsync(cancellationToken);
+            if (disponibilidad is null || disponibilidad.HorasDisponibles == 0)
+            {
+                return "El docente de asignatura no tiene disponibilidad validada para este periodo.";
+            }
+
+            cargaMaximaSemanal = Convert.ToByte(disponibilidad.HorasDisponibles);
+        }
 
         var horasAsignadas = await dbContext.CargasAcademicas.AsNoTracking()
             .Where(x => x.DocenteId == docenteId
@@ -336,9 +374,12 @@ public sealed class CargaAcademicaController(
                 cancellationToken)
             ?? 0;
         var nuevaCarga = horasAsignadas + oferta.HorasRequeridas;
-        if (nuevaCarga > docente.CargaMaximaSemanal)
+        if (nuevaCarga > cargaMaximaSemanal)
         {
-            return $"La asignación llevaría al docente a {nuevaCarga} h y supera su carga máxima semanal de {docente.CargaMaximaSemanal} h.";
+            var limite = docente.Tipo == TipoDocente.Asignatura
+                ? "disponibles y validadas para este periodo"
+                : "de carga máxima semanal";
+            return $"La asignación llevaría al docente a {nuevaCarga} h y supera sus {cargaMaximaSemanal} h {limite}.";
         }
 
         return null;
