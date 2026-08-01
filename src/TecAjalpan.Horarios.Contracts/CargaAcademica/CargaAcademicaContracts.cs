@@ -5,19 +5,11 @@ namespace TecAjalpan.Horarios.Contracts.CargaAcademica;
 public sealed record CargaAcademicaCatalogosDto(
     IReadOnlyList<CargaPeriodoDto> Periodos,
     IReadOnlyList<CargaCarreraDto> Carreras,
-    IReadOnlyList<CargaModalidadDto> Modalidades,
-    IReadOnlyList<CargaDocenteDto> Docentes);
+    IReadOnlyList<CargaModalidadDto> Modalidades);
 
 public sealed record CargaPeriodoDto(Guid Id, string Nombre, byte Estado);
 public sealed record CargaCarreraDto(Guid Id, string Clave, string Nombre);
 public sealed record CargaModalidadDto(Guid Id, string Clave, string Nombre);
-public sealed record CargaDocenteDto(
-    Guid Id,
-    string NumeroTrabajador,
-    string NombreCompleto,
-    byte CargaMaximaSemanal,
-    IReadOnlyList<Guid> CarreraIds);
-
 public sealed record CargaConfiguracionDto(
     Guid PeriodoCarreraId,
     Guid PeriodoId,

@@ -261,9 +261,15 @@ else
               <option value="@Guid.Empty">Selecciona un docente</option>
               @foreach (var docente in DocentesCarrera)
               {
-                <option value="@docente.Id">@TextoCargaDocente(docente)</option>
+                <option value="@docente.DocenteId">@TextoCargaDocente(docente)</option>
               }
             </InputSelect>
+            @if (!DocentesCarrera.Any())
+            {
+              <small class="form-help">
+                No hay docentes de esta carrera con disponibilidad validada en el periodo seleccionado.
+              </small>
+            }
             <small>
               El titular atenderá las @materiaActual.HorasRequeridas horas
               teóricas y prácticas de la materia.
@@ -307,7 +313,7 @@ else
 }
 
 @code {
-  private CargaAcademicaCatalogosDto catalogos = new([], [], [], []);
+  private CargaAcademicaCatalogosDto catalogos = new([], [], []);
   private CargaConfiguracionDto? configuracion;
   private CargaMateriaDto? materiaActual;
   private GuardarCargaAcademicaRequest modelo = new();
@@ -326,9 +332,9 @@ else
   private bool SeleccionCompleta => periodoId != Guid.Empty
     && carreraId != Guid.Empty
     && modalidadId != Guid.Empty;
-  private IEnumerable<CargaDocenteDto> DocentesCarrera => catalogos.Docentes
-    .Where(x => x.CarreraIds.Contains(carreraId))
-    .OrderBy(x => x.NombreCompleto);
+  private IEnumerable<CargaDocenteResumenDto> DocentesCarrera =>
+    configuracion?.ResumenDocentes.OrderBy(x => x.DocenteNombre)
+      ?? Enumerable.Empty<CargaDocenteResumenDto>();
   private int TotalMaterias =>
     configuracion?.Grupos.Sum(x => x.Materias.Count) ?? 0;
   private int MateriasAsignadas =>
@@ -403,20 +409,14 @@ else
     }
   }
 
-  private string TextoCargaDocente(CargaDocenteDto docente)
+  private static string TextoCargaDocente(CargaDocenteResumenDto docente)
   {
-    var resumen = configuracion?.ResumenDocentes
-      .FirstOrDefault(x => x.DocenteId == docente.Id);
-    if (resumen is null)
-      return docente.NombreCompleto;
-    if (resumen.TipoDocente == 2)
+    if (docente.TipoDocente == 2)
     {
-      if (!resumen.HorasDisponibles.HasValue || resumen.HorasDisponibles == 0)
-        return $"{docente.NombreCompleto} · sin disponibilidad validada";
-      return $"{docente.NombreCompleto} · {resumen.HorasAsignadas} h asignadas · {resumen.HorasDisponibles} bloques disponibles";
+      return $"{docente.DocenteNombre} · {docente.HorasAsignadas} h asignadas · {docente.HorasDisponibles} bloques disponibles";
     }
 
-    return $"{docente.NombreCompleto} · {resumen.HorasAsignadas} h frente a grupo · jornada institucional de {resumen.CargaMaximaSemanal} h";
+    return $"{docente.DocenteNombre} · {docente.HorasAsignadas} h frente a grupo · jornada institucional de {docente.CargaMaximaSemanal} h";
   }
 
   private void Editar(CargaMateriaDto materia)

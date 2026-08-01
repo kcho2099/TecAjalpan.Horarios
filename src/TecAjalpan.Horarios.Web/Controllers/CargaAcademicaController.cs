@@ -45,26 +45,8 @@ public sealed class CargaAcademicaController(
             .Select(x => new CargaModalidadDto(x.Id, x.Clave, x.Nombre))
             .ToArrayAsync(cancellationToken);
 
-        var carrerasPermitidas = carreras.Select(x => x.Id).ToArray();
-        var docentesEntidades = await dbContext.Docentes.AsNoTracking()
-            .Include(x => x.Carreras)
-            .Where(x => x.Activo
-                && x.Carreras.Any(c => carrerasPermitidas.Contains(c.CarreraId)))
-            .OrderBy(x => x.Apellidos)
-            .ThenBy(x => x.Nombres)
-            .ToArrayAsync(cancellationToken);
-
-        var docentes = docentesEntidades
-            .Select(x => new CargaDocenteDto(
-                x.Id,
-                x.NumeroTrabajador,
-                x.Apellidos + ", " + x.Nombres,
-                x.CargaMaximaSemanal,
-                x.Carreras.Select(c => c.CarreraId).ToArray()))
-            .ToArray();
-
         return Ok(new CargaAcademicaCatalogosDto(
-            periodos, carreras, modalidades, docentes));
+            periodos, carreras, modalidades));
     }
 
     [HttpGet]
@@ -106,7 +88,12 @@ public sealed class CargaAcademicaController(
             .ToArrayAsync(cancellationToken);
 
         var docentesCarrera = await dbContext.DocentesCarreras.AsNoTracking()
-            .Where(x => x.CarreraId == carreraId && x.Docente.Activo)
+            .Where(x => x.CarreraId == carreraId
+                && x.Docente.Activo
+                && dbContext.DisponibilidadesDocentes.Any(disponibilidad =>
+                    disponibilidad.DocenteId == x.DocenteId
+                    && disponibilidad.PeriodoId == periodoId
+                    && disponibilidad.Validada))
             .Select(x => new
             {
                 x.DocenteId,
@@ -137,7 +124,7 @@ public sealed class CargaAcademicaController(
             })
             .ToArrayAsync(cancellationToken);
 
-        var disponibilidadesAsignatura = await dbContext.DisponibilidadesDocentes
+        var disponibilidadesValidadas = await dbContext.DisponibilidadesDocentes
             .AsNoTracking()
             .Where(x => docentesCarreraIds.Contains(x.DocenteId)
                 && x.PeriodoId == periodoId
@@ -152,7 +139,7 @@ public sealed class CargaAcademicaController(
         var resumenDocentes = docentesCarrera
             .Select(docente =>
             {
-                var disponibilidad = disponibilidadesAsignatura
+                var disponibilidad = disponibilidadesValidadas
                     .SingleOrDefault(x => x.DocenteId == docente.DocenteId);
                 return new CargaDocenteResumenDto(
                     docente.DocenteId,
@@ -347,26 +334,26 @@ public sealed class CargaAcademicaController(
         if (docente is null)
             return "El docente debe estar activo y vinculado a la carrera.";
 
-        int? horasDisponibles = null;
-        if (docente.Tipo == TipoDocente.Asignatura)
-        {
-            var disponibilidad = await dbContext.DisponibilidadesDocentes
-                .AsNoTracking()
-                .Where(x => x.DocenteId == docenteId
-                    && x.PeriodoId == oferta.Grupo.PeriodoCarrera.PeriodoId
-                    && x.Validada)
-                .Select(x => new
-                {
-                    HorasDisponibles = x.Bloques.Count(b => b.Disponible)
-                })
-                .SingleOrDefaultAsync(cancellationToken);
-            if (disponibilidad is null || disponibilidad.HorasDisponibles == 0)
+        var disponibilidad = await dbContext.DisponibilidadesDocentes
+            .AsNoTracking()
+            .Where(x => x.DocenteId == docenteId
+                && x.PeriodoId == oferta.Grupo.PeriodoCarrera.PeriodoId
+                && x.Validada)
+            .Select(x => new
             {
-                return "El docente de asignatura no tiene disponibilidad validada para este periodo.";
-            }
-
-            horasDisponibles = disponibilidad.HorasDisponibles;
+                HorasDisponibles = x.Bloques.Count(b => b.Disponible)
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (disponibilidad is null)
+        {
+            return "El docente no tiene disponibilidad validada para este periodo.";
         }
+
+        int? horasDisponibles = docente.Tipo == TipoDocente.Asignatura
+            ? disponibilidad.HorasDisponibles
+            : null;
+        if (docente.Tipo == TipoDocente.Asignatura && horasDisponibles == 0)
+            return "El docente de asignatura no tiene bloques disponibles validados para este periodo.";
 
         var horasAsignadas = await dbContext.CargasAcademicas.AsNoTracking()
             .Where(x => x.DocenteId == docenteId
