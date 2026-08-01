@@ -74,3 +74,11 @@ public sealed class AutorizarCargaAcademicaRequest
     [Required]
     public string RowVersion { get; set; } = string.Empty;
 }
+
+public sealed class QuitarTitularCargaAcademicaRequest
+{
+    public Guid CargaAcademicaId { get; set; }
+
+    [Required]
+    public string RowVersion { get; set; } = string.Empty;
+}

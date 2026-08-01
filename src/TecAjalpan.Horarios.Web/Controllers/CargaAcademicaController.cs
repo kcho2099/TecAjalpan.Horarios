@@ -251,6 +251,69 @@ public sealed class CargaAcademicaController(
         return Ok(await ObtenerMateria(ofertaMateriaId, cancellationToken));
     }
 
+    [HttpDelete("materias/{ofertaMateriaId:guid}/titular")]
+    [Authorize(Roles = Roles.Administrador + "," + Roles.Jefatura)]
+    public async Task<ActionResult<CargaMateriaDto>> QuitarTitular(
+        Guid ofertaMateriaId,
+        QuitarTitularCargaAcademicaRequest request,
+        CancellationToken cancellationToken)
+    {
+        var oferta = await dbContext.OfertasMaterias
+            .Include(x => x.Materia)
+            .Include(x => x.Grupo)
+                .ThenInclude(x => x.PeriodoCarrera)
+                .ThenInclude(x => x.Periodo)
+            .SingleOrDefaultAsync(
+                x => x.Id == ofertaMateriaId && x.Activa,
+                cancellationToken);
+        if (oferta is null)
+        {
+            return NotFound(new
+            {
+                mensaje = "La materia ya no forma parte de la oferta académica."
+            });
+        }
+        if (!usuarioActual.PuedeAccederCarrera(
+                oferta.Grupo.PeriodoCarrera.CarreraId))
+            return Forbid();
+        if (oferta.Grupo.PeriodoCarrera.Periodo.Estado == EstadoPeriodo.Cerrado)
+        {
+            return Conflict(new
+            {
+                mensaje = "No se puede modificar la carga de un periodo cerrado."
+            });
+        }
+
+        var asignacion = await dbContext.CargasAcademicas
+            .SingleOrDefaultAsync(
+                x => x.OfertaMateriaId == ofertaMateriaId,
+                cancellationToken);
+        if (asignacion is null)
+            return Conflicto();
+        if (asignacion.Estado == EstadoCarga.Autorizada)
+        {
+            return Conflict(new
+            {
+                mensaje = "No se puede quitar un titular de una carga ya autorizada por Subdirección."
+            });
+        }
+        if (asignacion.Id != request.CargaAcademicaId
+            || !VersionCoincide(asignacion, request.RowVersion))
+            return Conflicto();
+
+        dbContext.CargasAcademicas.Remove(asignacion);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflicto();
+        }
+
+        return Ok(MapearMateria(oferta, null));
+    }
+
     [HttpPost("materias/{ofertaMateriaId:guid}/autorizar")]
     [Authorize(Roles = Roles.Administrador + "," + Roles.Subdireccion)]
     public async Task<ActionResult<CargaMateriaDto>> Autorizar(

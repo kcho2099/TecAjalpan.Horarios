@@ -216,6 +216,13 @@ else
                                 @onclick="() => Editar(materia)">
                           @(materia.Titular is null ? "Asignar" : "Editar")
                         </button>
+                        @if (materia.Titular is not null && !materia.Autorizada)
+                        {
+                          <button class="btn-link" disabled="@procesando"
+                                  @onclick="() => ConfirmarQuitarTitular(materia)">
+                            Quitar
+                          </button>
+                        }
                       }
                       @if (puedeAutorizar && materia.Titular is not null && !materia.Autorizada)
                       {
@@ -300,6 +307,40 @@ else
   </div>
 }
 
+@if (materiaParaQuitar?.Titular is not null && puedeEditar)
+{
+  <div class="modal-backdrop" @onclick="CerrarConfirmacionQuitar">
+    <section class="modal-card confirm-card" role="alertdialog" aria-modal="true"
+             aria-labelledby="titulo-quitar-titular" @onclick:stopPropagation>
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">Confirmar corrección</span>
+          <h2 id="titulo-quitar-titular">Quitar docente titular</h2>
+        </div>
+        <button class="icon-button" type="button" disabled="@procesando"
+                @onclick="CerrarConfirmacionQuitar">×</button>
+      </div>
+      <p>
+        Se quitará a <strong>@materiaParaQuitar.Titular.DocenteNombre</strong> de
+        <strong>@materiaParaQuitar.Clave · @materiaParaQuitar.Nombre</strong>.
+        La materia volverá a quedar pendiente y podrás asignar otro docente después.
+      </p>
+      @if (!string.IsNullOrWhiteSpace(errorQuitar))
+      {
+        <div class="alerta-error modal-alert">@errorQuitar</div>
+      }
+      <div class="modal-actions">
+        <button class="btn-ghost" type="button" disabled="@procesando"
+                @onclick="CerrarConfirmacionQuitar">Cancelar</button>
+        <button class="btn-danger" type="button" disabled="@procesando"
+                @onclick="QuitarTitular">
+          @(procesando ? "Quitando…" : "Sí, quitar titular")
+        </button>
+      </div>
+    </section>
+  </div>
+}
+
 @if (procesando)
 {
   <div class="loading-overlay" role="status" aria-live="polite"
@@ -316,6 +357,7 @@ else
   private CargaAcademicaCatalogosDto catalogos = new([], [], []);
   private CargaConfiguracionDto? configuracion;
   private CargaMateriaDto? materiaActual;
+  private CargaMateriaDto? materiaParaQuitar;
   private GuardarCargaAcademicaRequest modelo = new();
   private Guid periodoId;
   private Guid carreraId;
@@ -328,6 +370,7 @@ else
   private string? mensaje;
   private string? error;
   private string? errorFormulario;
+  private string? errorQuitar;
 
   private bool SeleccionCompleta => periodoId != Guid.Empty
     && carreraId != Guid.Empty
@@ -504,6 +547,51 @@ else
     }
   }
 
+  private void ConfirmarQuitarTitular(CargaMateriaDto materia)
+  {
+    if (materia.Titular is null || materia.Autorizada)
+      return;
+
+    materiaParaQuitar = materia;
+    errorQuitar = null;
+  }
+
+  private async Task QuitarTitular()
+  {
+    if (materiaParaQuitar?.Titular is null)
+      return;
+
+    procesando = true;
+    errorQuitar = null;
+    try
+    {
+      var request = new QuitarTitularCargaAcademicaRequest
+      {
+        CargaAcademicaId = materiaParaQuitar.Titular.Id,
+        RowVersion = materiaParaQuitar.Titular.RowVersion
+      };
+      var resultado = await Api.QuitarTitularAsync(
+        materiaParaQuitar.OfertaMateriaId, request);
+      if (!resultado.Correcto || resultado.Valor is null)
+      {
+        errorQuitar = resultado.Mensaje;
+        return;
+      }
+
+      materiaParaQuitar = null;
+      await Cargar();
+      mensaje = "Docente titular quitado. La materia volvió a quedar pendiente.";
+    }
+    catch (Exception ex)
+    {
+      errorQuitar = $"No fue posible quitar al docente titular: {ex.Message}";
+    }
+    finally
+    {
+      procesando = false;
+    }
+  }
+
   private void ReemplazarMateria(CargaMateriaDto actualizada)
   {
     if (configuracion is null)
@@ -528,6 +616,14 @@ else
     mostrarFormulario = false;
     materiaActual = null;
     errorFormulario = null;
+  }
+
+  private void CerrarConfirmacionQuitar()
+  {
+    if (procesando)
+      return;
+    materiaParaQuitar = null;
+    errorQuitar = null;
   }
 
 }

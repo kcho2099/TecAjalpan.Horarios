@@ -43,6 +43,16 @@ public sealed class CargaAcademicaApi(HttpClient httpClient)
             request,
             cancellationToken);
 
+    public Task<ResultadoCarga<CargaMateriaDto>> QuitarTitularAsync(
+        Guid ofertaMateriaId,
+        QuitarTitularCargaAcademicaRequest request,
+        CancellationToken cancellationToken = default) =>
+        EnviarAsync<QuitarTitularCargaAcademicaRequest, CargaMateriaDto>(
+            HttpMethod.Delete,
+            $"api/carga-academica/materias/{ofertaMateriaId}/titular",
+            request,
+            cancellationToken);
+
     private async Task<ResultadoCarga<TResponse>> EnviarAsync<TRequest, TResponse>(
         HttpMethod metodo,
         string url,
