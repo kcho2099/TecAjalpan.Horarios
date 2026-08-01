@@ -108,12 +108,19 @@ else
         @foreach (var docente in configuracion.ResumenDocentes)
         {
           var porcentaje = docente.CargaMaximaSemanal == 0
-            ? 100
+            ? 0
             : Math.Min(100, docente.HorasAsignadas * 100 / docente.CargaMaximaSemanal);
           <article class="carga-docente-card">
             <div>
               <strong>@docente.DocenteNombre</strong>
-              <small>@docente.HorasAsignadas / @docente.CargaMaximaSemanal h</small>
+              @if (docente.CargaMaximaSemanal == 0)
+              {
+                <small>Sin disponibilidad validada para el periodo</small>
+              }
+              else
+              {
+                <small>@docente.HorasAsignadas h asignadas · límite @docente.CargaMaximaSemanal h</small>
+              }
             </div>
             <div class="carga-barra">
               <span style="@($"width: {porcentaje}%")"></span>
@@ -382,9 +389,12 @@ else
 
   private string TextoCargaDocente(CargaDocenteDto docente)
   {
-    var horas = configuracion?.ResumenDocentes
-      .FirstOrDefault(x => x.DocenteId == docente.Id)?.HorasAsignadas ?? 0;
-    return $"{docente.NombreCompleto} · {horas}/{docente.CargaMaximaSemanal} h asignadas";
+    var resumen = configuracion?.ResumenDocentes
+      .FirstOrDefault(x => x.DocenteId == docente.Id);
+    if (resumen is null || resumen.CargaMaximaSemanal == 0)
+      return $"{docente.NombreCompleto} · sin disponibilidad validada";
+
+    return $"{docente.NombreCompleto} · {resumen.HorasAsignadas} h asignadas · límite {resumen.CargaMaximaSemanal} h";
   }
 
   private void Editar(CargaMateriaDto materia)
