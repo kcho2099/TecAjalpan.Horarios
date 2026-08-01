@@ -84,7 +84,11 @@
 }
 
 .carga-docente-card small {
-  white-space: nowrap;
+  white-space: normal;
+}
+
+.carga-docente-card > .btn-link {
+  justify-self: start;
 }
 
 .carga-barra {

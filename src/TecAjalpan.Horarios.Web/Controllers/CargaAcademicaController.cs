@@ -149,23 +149,133 @@ public sealed class CargaAcademicaController(
             })
             .ToArrayAsync(cancellationToken);
 
+        var autorizacionesAsignatura = await dbContext.AutorizacionesCargaDocentes
+            .AsNoTracking()
+            .Where(x => docentesCarreraIds.Contains(x.DocenteId)
+                && x.PeriodoId == periodoId)
+            .Select(x => new
+            {
+                x.DocenteId,
+                x.HorasAutorizadas,
+                x.RowVersion
+            })
+            .ToArrayAsync(cancellationToken);
+
         var resumenDocentes = docentesCarrera
-            .Select(docente => new CargaDocenteResumenDto(
-                docente.DocenteId,
-                docente.Apellidos + ", " + docente.Nombres,
-                cargasDocentes
-                    .SingleOrDefault(x => x.DocenteId == docente.DocenteId)
-                    ?.HorasAsignadas ?? 0,
-                docente.Tipo == TipoDocente.Asignatura
-                    ? Convert.ToByte(disponibilidadesAsignatura
+            .Select(docente =>
+            {
+                var disponibilidad = disponibilidadesAsignatura
+                    .SingleOrDefault(x => x.DocenteId == docente.DocenteId);
+                var autorizacion = autorizacionesAsignatura
+                    .SingleOrDefault(x => x.DocenteId == docente.DocenteId);
+                return new CargaDocenteResumenDto(
+                    docente.DocenteId,
+                    docente.Apellidos + ", " + docente.Nombres,
+                    (byte)docente.Tipo,
+                    cargasDocentes
                         .SingleOrDefault(x => x.DocenteId == docente.DocenteId)
-                        ?.HorasDisponibles ?? 0)
-                    : docente.CargaMaximaSemanal))
+                        ?.HorasAsignadas ?? 0,
+                    docente.CargaMaximaSemanal,
+                    docente.Tipo == TipoDocente.Asignatura
+                        ? autorizacion?.HorasAutorizadas
+                        : null,
+                    docente.Tipo == TipoDocente.Asignatura
+                        ? disponibilidad?.HorasDisponibles
+                        : null,
+                    autorizacion is null
+                        ? null
+                        : Convert.ToBase64String(autorizacion.RowVersion));
+            })
             .OrderByDescending(x => x.HorasAsignadas)
             .ThenBy(x => x.DocenteNombre)
             .ToArray();
 
         return Ok(Mapear(configuracion, asignaciones, resumenDocentes));
+    }
+
+    [HttpPut("docentes/{docenteId:guid}/autorizacion/{periodoId:guid}")]
+    [Authorize(Roles = Roles.Administrador + "," + Roles.Jefatura)]
+    public async Task<ActionResult<CargaAutorizacionDocenteDto>>
+        GuardarCargaAutorizada(
+            Guid docenteId,
+            Guid periodoId,
+            GuardarCargaAutorizadaRequest request,
+            CancellationToken cancellationToken)
+    {
+        if (request.DocenteId != docenteId || request.PeriodoId != periodoId)
+            return BadRequest(new { mensaje = "El docente o periodo no coincide con la ruta." });
+
+        var periodoAbierto = await dbContext.Periodos.AsNoTracking()
+            .AnyAsync(x => x.Id == periodoId && x.Estado != EstadoPeriodo.Cerrado,
+                cancellationToken);
+        if (!periodoAbierto)
+            return Conflict(new { mensaje = "No se puede modificar la autorización de un periodo cerrado." });
+
+        var docente = await dbContext.Docentes.AsNoTracking()
+            .Where(x => x.Id == docenteId && x.Activo)
+            .Select(x => new
+            {
+                x.Tipo,
+                CarreraIds = x.Carreras.Select(c => c.CarreraId).ToArray()
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (docente is null)
+            return NotFound(new { mensaje = "No se encontró un docente activo." });
+        if (docente.Tipo != TipoDocente.Asignatura)
+            return BadRequest(new { mensaje = "La autorización por periodo sólo aplica a docentes de asignatura." });
+        if (!TieneAlcanceInstitucional()
+            && !docente.CarreraIds.Any(usuarioActual.PuedeAccederCarrera))
+            return Forbid();
+
+        var autorizacion = await dbContext.AutorizacionesCargaDocentes
+            .SingleOrDefaultAsync(x => x.DocenteId == docenteId
+                && x.PeriodoId == periodoId, cancellationToken);
+        if (!VersionCoincide(autorizacion?.RowVersion, request.RowVersion))
+            return Conflicto();
+
+        if (autorizacion is null)
+        {
+            autorizacion = new AutorizacionCargaDocente
+            {
+                DocenteId = docenteId,
+                PeriodoId = periodoId
+            };
+            dbContext.AutorizacionesCargaDocentes.Add(autorizacion);
+        }
+
+        var horasYaAsignadas = await dbContext.CargasAcademicas.AsNoTracking()
+            .Where(x => x.DocenteId == docenteId
+                && x.OfertaMateria.Activa
+                && x.OfertaMateria.Grupo.PeriodoCarrera.PeriodoId == periodoId)
+            .SumAsync(x => (int?)x.OfertaMateria.HorasRequeridas, cancellationToken)
+            ?? 0;
+        if (request.HorasAutorizadas < horasYaAsignadas)
+        {
+            return BadRequest(new
+            {
+                mensaje = $"El docente ya tiene {horasYaAsignadas} h asignadas; la autorización no puede ser menor."
+            });
+        }
+
+        autorizacion.HorasAutorizadas = request.HorasAutorizadas;
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflicto();
+        }
+        catch (DbUpdateException)
+        {
+            return Conflict(new { mensaje = "La autorización fue registrada por otra persona. Recarga e inténtalo nuevamente." });
+        }
+
+        return Ok(new CargaAutorizacionDocenteDto(
+            autorizacion.DocenteId,
+            autorizacion.PeriodoId,
+            autorizacion.HorasAutorizadas,
+            Convert.ToBase64String(autorizacion.RowVersion)));
     }
 
     [HttpPut("materias/{ofertaMateriaId:guid}")]
@@ -343,8 +453,19 @@ public sealed class CargaAcademicaController(
             return "El docente debe estar activo y vinculado a la carrera.";
 
         var cargaMaximaSemanal = docente.CargaMaximaSemanal;
+        int? horasDisponibles = null;
         if (docente.Tipo == TipoDocente.Asignatura)
         {
+            var autorizacion = await dbContext.AutorizacionesCargaDocentes
+                .AsNoTracking()
+                .SingleOrDefaultAsync(x => x.DocenteId == docenteId
+                    && x.PeriodoId == oferta.Grupo.PeriodoCarrera.PeriodoId,
+                    cancellationToken);
+            if (autorizacion is null || autorizacion.HorasAutorizadas == 0)
+            {
+                return "Define primero las horas autorizadas del docente de asignatura para este periodo.";
+            }
+
             var disponibilidad = await dbContext.DisponibilidadesDocentes
                 .AsNoTracking()
                 .Where(x => x.DocenteId == docenteId
@@ -360,7 +481,8 @@ public sealed class CargaAcademicaController(
                 return "El docente de asignatura no tiene disponibilidad validada para este periodo.";
             }
 
-            cargaMaximaSemanal = Convert.ToByte(disponibilidad.HorasDisponibles);
+            cargaMaximaSemanal = autorizacion.HorasAutorizadas;
+            horasDisponibles = disponibilidad.HorasDisponibles;
         }
 
         var horasAsignadas = await dbContext.CargasAcademicas.AsNoTracking()
@@ -377,9 +499,13 @@ public sealed class CargaAcademicaController(
         if (nuevaCarga > cargaMaximaSemanal)
         {
             var limite = docente.Tipo == TipoDocente.Asignatura
-                ? "disponibles y validadas para este periodo"
+                ? "autorizadas para este periodo"
                 : "de carga máxima semanal";
             return $"La asignación llevaría al docente a {nuevaCarga} h y supera sus {cargaMaximaSemanal} h {limite}.";
+        }
+        if (horasDisponibles.HasValue && nuevaCarga > horasDisponibles.Value)
+        {
+            return $"La asignación llevaría al docente a {nuevaCarga} h, pero su disponibilidad validada sólo contiene {horasDisponibles.Value} bloques.";
         }
 
         return null;
@@ -472,6 +598,23 @@ public sealed class CargaAcademicaController(
         {
             return Convert.FromBase64String(rowVersion)
                 .SequenceEqual(asignacion.RowVersion);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    private static bool VersionCoincide(byte[]? versionActual, string? rowVersion)
+    {
+        if (versionActual is null)
+            return string.IsNullOrWhiteSpace(rowVersion);
+        if (string.IsNullOrWhiteSpace(rowVersion))
+            return false;
+
+        try
+        {
+            return Convert.FromBase64String(rowVersion).SequenceEqual(versionActual);
         }
         catch (FormatException)
         {

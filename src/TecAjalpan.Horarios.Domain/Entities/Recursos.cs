@@ -39,6 +39,15 @@ public sealed class DisponibilidadDocente : EntidadAuditable
     public ICollection<JornadaDocente> Jornadas { get; set; } = [];
 }
 
+public sealed class AutorizacionCargaDocente : EntidadAuditable
+{
+    public Guid PeriodoId { get; set; }
+    public Periodo Periodo { get; set; } = null!;
+    public Guid DocenteId { get; set; }
+    public Docente Docente { get; set; } = null!;
+    public byte HorasAutorizadas { get; set; }
+}
+
 public sealed class JornadaDocente : EntidadAuditable
 {
     public Guid DisponibilidadDocenteId { get; set; }

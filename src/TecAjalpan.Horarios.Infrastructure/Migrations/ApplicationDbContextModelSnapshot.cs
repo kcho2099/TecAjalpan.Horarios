@@ -276,6 +276,60 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                             }));
                 });
 
+            modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.AutorizacionCargaDocente", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DocenteId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("Eliminado")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("FechaCrea")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("FechaElimina")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("FechaModifica")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte>("HorasAutorizadas")
+                        .HasColumnType("tinyint");
+
+                    b.Property<Guid>("PeriodoId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("UsuarioCrea")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("UsuarioElimina")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("UsuarioModifica")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocenteId");
+
+                    b.HasIndex("PeriodoId", "DocenteId")
+                        .IsUnique()
+                        .HasFilter("[Eliminado] = 0");
+
+                    b.ToTable("AutorizacionesCargaDocentes", "Recursos");
+                });
+
             modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.CargaAcademica", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2075,6 +2129,25 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("SesionHorario");
+                });
+
+            modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.AutorizacionCargaDocente", b =>
+                {
+                    b.HasOne("TecAjalpan.Horarios.Domain.Entities.Docente", "Docente")
+                        .WithMany()
+                        .HasForeignKey("DocenteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TecAjalpan.Horarios.Domain.Entities.Periodo", "Periodo")
+                        .WithMany()
+                        .HasForeignKey("PeriodoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Docente");
+
+                    b.Navigation("Periodo");
                 });
 
             modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.CargaAcademica", b =>
