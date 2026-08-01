@@ -1,0 +1,500 @@
+@page "/carga-academica"
+@attribute [Authorize(Roles = "Administrador,Jefatura,Subdirección Académica")]
+@inject CargaAcademicaApi Api
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Carga académica | Horarios Tec Ajalpan</PageTitle>
+
+<div class="page-heading">
+  <div>
+    <span class="eyebrow">Planeación docente</span>
+    <h1>Carga académica</h1>
+    <p>Asigna un docente titular a cada materia y grupo antes de generar los horarios.</p>
+  </div>
+  @if (configuracion is not null)
+  {
+    <div class="carga-resumen">
+      <strong>@MateriasAsignadas / @TotalMaterias</strong>
+      <small>materias con docente titular</small>
+    </div>
+  }
+</div>
+
+@if (!string.IsNullOrWhiteSpace(mensaje))
+{
+  <div class="alerta-exito">@mensaje</div>
+}
+@if (!string.IsNullOrWhiteSpace(error))
+{
+  <div class="alerta-error">@error</div>
+}
+
+<article class="panel carga-filtros">
+  <div class="form-field">
+    <label for="carga-periodo">Periodo</label>
+    <InputSelect id="carga-periodo" @bind-Value="periodoId"
+                 @bind-Value:after="SeleccionCambio">
+      <option value="@Guid.Empty">Selecciona un periodo</option>
+      @foreach (var periodo in catalogos.Periodos)
+      {
+        <option value="@periodo.Id">@periodo.Nombre</option>
+      }
+    </InputSelect>
+  </div>
+  <div class="form-field">
+    <label for="carga-carrera">Carrera</label>
+    <InputSelect id="carga-carrera" @bind-Value="carreraId"
+                 @bind-Value:after="SeleccionCambio">
+      <option value="@Guid.Empty">Selecciona una carrera</option>
+      @foreach (var carrera in catalogos.Carreras)
+      {
+        <option value="@carrera.Id">@carrera.Clave · @carrera.Nombre</option>
+      }
+    </InputSelect>
+  </div>
+  <div class="form-field">
+    <label for="carga-modalidad">Modalidad</label>
+    <InputSelect id="carga-modalidad" @bind-Value="modalidadId"
+                 @bind-Value:after="SeleccionCambio">
+      <option value="@Guid.Empty">Selecciona una modalidad</option>
+      @foreach (var modalidad in catalogos.Modalidades)
+      {
+        <option value="@modalidad.Id">@modalidad.Nombre</option>
+      }
+    </InputSelect>
+  </div>
+</article>
+
+@if (cargando)
+{
+  <div class="table-state">Cargando carga académica…</div>
+}
+else if (!SeleccionCompleta)
+{
+  <div class="empty-state">
+    <div class="empty-icon">▤</div>
+    <h2>Selecciona periodo, carrera y modalidad</h2>
+    <p>Se mostrarán los grupos y materias registrados en Oferta académica.</p>
+  </div>
+}
+else if (configuracion is null)
+{
+  <div class="empty-state">
+    <div class="empty-icon">＋</div>
+    <h2>No existe una oferta para esta selección</h2>
+    <p>Primero habilita la carrera, modalidad, grupos y materias en Oferta académica.</p>
+  </div>
+}
+else if (configuracion.Grupos.Count == 0)
+{
+  <div class="empty-state compact">
+    <h2>La oferta todavía no tiene grupos</h2>
+    <p>Agrega grupos desde Oferta académica para comenzar la asignación docente.</p>
+  </div>
+}
+else
+{
+  @if (configuracion.ResumenDocentes.Count > 0)
+  {
+    <section class="panel carga-docentes-panel">
+      <div class="panel-title">
+        <div>
+          <span>Carga acumulada</span>
+          <h2>Docentes del periodo</h2>
+        </div>
+        <small>La carga incluye todas sus asignaciones dentro del periodo.</small>
+      </div>
+      <div class="carga-docentes-grid">
+        @foreach (var docente in configuracion.ResumenDocentes)
+        {
+          var porcentaje = docente.CargaMaximaSemanal == 0
+            ? 100
+            : Math.Min(100, docente.HorasAsignadas * 100 / docente.CargaMaximaSemanal);
+          <article class="carga-docente-card">
+            <div>
+              <strong>@docente.DocenteNombre</strong>
+              <small>@docente.HorasAsignadas / @docente.CargaMaximaSemanal h</small>
+            </div>
+            <div class="carga-barra">
+              <span style="@($"width: {porcentaje}%")"></span>
+            </div>
+          </article>
+        }
+      </div>
+    </section>
+  }
+
+  <div class="carga-grupos">
+    @foreach (var grupo in configuracion.Grupos)
+    {
+      <section class="panel carga-grupo">
+        <div class="carga-grupo-header">
+          <div>
+            <span class="eyebrow">Semestre @grupo.Semestre</span>
+            <h2>@grupo.Clave · @grupo.Nombre</h2>
+            <small>@(grupo.EspacioBase ?? "Sin aula o laboratorio asignado")</small>
+          </div>
+          <span class="record-count">@grupo.Materias.Count materia(s)</span>
+        </div>
+
+        @if (grupo.Materias.Count == 0)
+        {
+          <div class="empty-state compact">
+            <p>Este grupo todavía no tiene materias ofertadas.</p>
+          </div>
+        }
+        else
+        {
+          <div class="table-responsive">
+            <table class="data-table carga-table">
+              <thead>
+                <tr>
+                  <th>Materia</th>
+                  <th>Horas</th>
+                  <th>Docente titular</th>
+                  <th>Estado</th>
+                  <th class="actions-column">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                @foreach (var materia in grupo.Materias)
+                {
+                  <tr>
+                    <td>
+                      <strong>@materia.Clave · @materia.Nombre</strong>
+                      <small class="table-secondary">
+                        @materia.HorasTeoricas h teoría · @materia.HorasPracticas h prácticas
+                      </small>
+                    </td>
+                    <td><strong>@materia.HorasRequeridas h</strong></td>
+                    <td>
+                      @if (materia.Titular is null)
+                      {
+                        <span class="carga-pendiente">Sin docente</span>
+                      }
+                      else
+                      {
+                        <div class="carga-asignaciones">
+                          <strong>@materia.Titular.DocenteNombre</strong>
+                          @if (!string.IsNullOrWhiteSpace(materia.Titular.Observaciones))
+                          {
+                            <small>@materia.Titular.Observaciones</small>
+                          }
+                        </div>
+                      }
+                    </td>
+                    <td>
+                      <span class="status @(materia.Autorizada
+                        ? "status-active"
+                        : materia.Titular is not null ? "status-draft" : "status-closed")">
+                        @(materia.Autorizada
+                          ? "Autorizada"
+                          : materia.Titular is not null ? "Borrador" : "Pendiente")
+                      </span>
+                    </td>
+                    <td class="actions-column catalogo-actions">
+                      @if (puedeEditar)
+                      {
+                        <button class="btn-link" disabled="@procesando"
+                                @onclick="() => Editar(materia)">
+                          @(materia.Titular is null ? "Asignar" : "Editar")
+                        </button>
+                      }
+                      @if (puedeAutorizar && materia.Titular is not null && !materia.Autorizada)
+                      {
+                        <button class="btn-link" disabled="@procesando"
+                                @onclick="() => Autorizar(materia)">
+                          Autorizar
+                        </button>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </section>
+    }
+  </div>
+}
+
+@if (mostrarFormulario && materiaActual is not null && puedeEditar)
+{
+  <div class="modal-backdrop" @onclick="CerrarFormulario">
+    <section class="modal-card" role="dialog" aria-modal="true"
+             aria-labelledby="titulo-carga" @onclick:stopPropagation>
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">
+            @materiaActual.Clave · @materiaActual.HorasRequeridas h semanales
+          </span>
+          <h2 id="titulo-carga">@materiaActual.Nombre</h2>
+        </div>
+        <button class="icon-button" type="button" disabled="@procesando"
+                @onclick="CerrarFormulario">×</button>
+      </div>
+
+      <EditForm Model="modelo" OnValidSubmit="Guardar">
+        <DataAnnotationsValidator />
+        <div class="form-grid">
+          <div class="form-field full">
+            <label>Docente titular</label>
+            <InputSelect @bind-Value="modelo.DocenteId">
+              <option value="@Guid.Empty">Selecciona un docente</option>
+              @foreach (var docente in DocentesCarrera)
+              {
+                <option value="@docente.Id">@TextoCargaDocente(docente)</option>
+              }
+            </InputSelect>
+            <small>
+              El titular atenderá las @materiaActual.HorasRequeridas horas
+              teóricas y prácticas de la materia.
+            </small>
+          </div>
+          <div class="form-field full">
+            <label>Observaciones</label>
+            <InputTextArea @bind-Value="modelo.Observaciones"
+                           placeholder="Indicaciones para la asignación (opcional)" />
+            <ValidationMessage For="() => modelo.Observaciones" />
+          </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(errorFormulario))
+        {
+          <div class="alerta-error modal-alert">@errorFormulario</div>
+        }
+
+        <div class="modal-actions">
+          <button class="btn-ghost" type="button" disabled="@procesando"
+                  @onclick="CerrarFormulario">Cancelar</button>
+          <button class="btn-primary" type="submit" disabled="@procesando">
+            @(procesando ? "Guardando…" : "Guardar titular")
+          </button>
+        </div>
+      </EditForm>
+    </section>
+  </div>
+}
+
+@if (procesando)
+{
+  <div class="loading-overlay" role="status" aria-live="polite"
+       aria-busy="true">
+    <div class="loading-card">
+      <span class="loading-spinner"></span>
+      <strong>Procesando carga académica…</strong>
+      <small>Por favor espera.</small>
+    </div>
+  </div>
+}
+
+@code {
+  private CargaAcademicaCatalogosDto catalogos = new([], [], [], []);
+  private CargaConfiguracionDto? configuracion;
+  private CargaMateriaDto? materiaActual;
+  private GuardarCargaAcademicaRequest modelo = new();
+  private Guid periodoId;
+  private Guid carreraId;
+  private Guid modalidadId;
+  private bool cargando = true;
+  private bool procesando;
+  private bool mostrarFormulario;
+  private bool puedeEditar;
+  private bool puedeAutorizar;
+  private string? mensaje;
+  private string? error;
+  private string? errorFormulario;
+
+  private bool SeleccionCompleta => periodoId != Guid.Empty
+    && carreraId != Guid.Empty
+    && modalidadId != Guid.Empty;
+  private IEnumerable<CargaDocenteDto> DocentesCarrera => catalogos.Docentes
+    .Where(x => x.CarreraIds.Contains(carreraId))
+    .OrderBy(x => x.NombreCompleto);
+  private int TotalMaterias =>
+    configuracion?.Grupos.Sum(x => x.Materias.Count) ?? 0;
+  private int MateriasAsignadas =>
+    configuracion?.Grupos.Sum(x => x.Materias.Count(m => m.Titular is not null)) ?? 0;
+
+  protected override async Task OnInitializedAsync()
+  {
+    var estado = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+    puedeEditar = estado.User.IsInRole("Administrador")
+      || estado.User.IsInRole("Jefatura");
+    puedeAutorizar = estado.User.IsInRole("Administrador")
+      || estado.User.IsInRole("Subdirección Académica");
+
+    try
+    {
+      catalogos = await Api.ObtenerCatalogosAsync();
+      periodoId = catalogos.Periodos.FirstOrDefault(x => x.Estado == 2)?.Id
+        ?? catalogos.Periodos.FirstOrDefault()?.Id
+        ?? Guid.Empty;
+      carreraId = catalogos.Carreras.Count == 1
+        ? catalogos.Carreras[0].Id
+        : Guid.Empty;
+      modalidadId = catalogos.Modalidades.Count == 1
+        ? catalogos.Modalidades[0].Id
+        : Guid.Empty;
+      await Cargar();
+    }
+    catch (Exception ex)
+    {
+      error = $"No fue posible cargar los catálogos: {ex.Message}";
+    }
+    finally
+    {
+      cargando = false;
+    }
+  }
+
+  private Task SeleccionCambio() => Cargar();
+
+  private async Task Cargar()
+  {
+    error = null;
+    mensaje = null;
+    configuracion = null;
+    if (!SeleccionCompleta)
+      return;
+
+    cargando = true;
+    try
+    {
+      var resultado = await Api.ObtenerAsync(periodoId, carreraId, modalidadId);
+      if (!resultado.Correcto)
+      {
+        error = resultado.Mensaje;
+        return;
+      }
+      configuracion = resultado.Valor;
+    }
+    catch (Exception ex)
+    {
+      error = $"No fue posible cargar la carga académica: {ex.Message}";
+    }
+    finally
+    {
+      cargando = false;
+    }
+  }
+
+  private string TextoCargaDocente(CargaDocenteDto docente)
+  {
+    var horas = configuracion?.ResumenDocentes
+      .FirstOrDefault(x => x.DocenteId == docente.Id)?.HorasAsignadas ?? 0;
+    return $"{docente.NombreCompleto} · {horas}/{docente.CargaMaximaSemanal} h asignadas";
+  }
+
+  private void Editar(CargaMateriaDto materia)
+  {
+    materiaActual = materia;
+    modelo = new GuardarCargaAcademicaRequest
+    {
+      OfertaMateriaId = materia.OfertaMateriaId,
+      DocenteId = materia.Titular?.DocenteId ?? Guid.Empty,
+      Observaciones = materia.Titular?.Observaciones,
+      RowVersion = materia.Titular?.RowVersion
+    };
+    errorFormulario = null;
+    mostrarFormulario = true;
+  }
+
+  private async Task Guardar()
+  {
+    if (materiaActual is null)
+      return;
+    if (modelo.DocenteId == Guid.Empty)
+    {
+      errorFormulario = "Selecciona al docente titular.";
+      return;
+    }
+
+    procesando = true;
+    errorFormulario = null;
+    try
+    {
+      var resultado = await Api.GuardarAsync(modelo);
+      if (!resultado.Correcto || resultado.Valor is null)
+      {
+        errorFormulario = resultado.Mensaje;
+        return;
+      }
+
+      mostrarFormulario = false;
+      materiaActual = null;
+      await Cargar();
+      mensaje = "Docente titular guardado correctamente.";
+    }
+    catch (Exception ex)
+    {
+      errorFormulario = $"No fue posible guardar la carga: {ex.Message}";
+    }
+    finally
+    {
+      procesando = false;
+    }
+  }
+
+  private async Task Autorizar(CargaMateriaDto materia)
+  {
+    if (materia.Titular is null)
+      return;
+
+    procesando = true;
+    error = null;
+    try
+    {
+      var request = new AutorizarCargaAcademicaRequest
+      {
+        CargaAcademicaId = materia.Titular.Id,
+        RowVersion = materia.Titular.RowVersion
+      };
+      var resultado = await Api.AutorizarAsync(
+        materia.OfertaMateriaId, request);
+      if (!resultado.Correcto || resultado.Valor is null)
+      {
+        error = resultado.Mensaje;
+        return;
+      }
+
+      ReemplazarMateria(resultado.Valor);
+      mensaje = "Carga académica autorizada correctamente.";
+    }
+    catch (Exception ex)
+    {
+      error = $"No fue posible autorizar la carga: {ex.Message}";
+    }
+    finally
+    {
+      procesando = false;
+    }
+  }
+
+  private void ReemplazarMateria(CargaMateriaDto actualizada)
+  {
+    if (configuracion is null)
+      return;
+
+    configuracion = configuracion with
+    {
+      Grupos = configuracion.Grupos.Select(grupo => grupo with
+      {
+        Materias = grupo.Materias.Select(materia =>
+          materia.OfertaMateriaId == actualizada.OfertaMateriaId
+            ? actualizada
+            : materia).ToArray()
+      }).ToArray()
+    };
+  }
+
+  private void CerrarFormulario()
+  {
+    if (procesando)
+      return;
+    mostrarFormulario = false;
+    materiaActual = null;
+    errorFormulario = null;
+  }
+}

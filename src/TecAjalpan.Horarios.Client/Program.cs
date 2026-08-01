@@ -5,6 +5,7 @@ using TecAjalpan.Horarios.Client;
 using TecAjalpan.Horarios.Client.Auditoria;
 using TecAjalpan.Horarios.Client.Auth;
 using TecAjalpan.Horarios.Client.Carreras;
+using TecAjalpan.Horarios.Client.CargaAcademica;
 using TecAjalpan.Horarios.Client.Docentes;
 using TecAjalpan.Horarios.Client.Espacios;
 using TecAjalpan.Horarios.Client.Oferta;
@@ -30,6 +31,7 @@ builder.Services.AddScoped(sp =>
 builder.Services.AddScoped<AuthApi>();
 builder.Services.AddScoped<BitacoraApi>();
 builder.Services.AddScoped<CarrerasApi>();
+builder.Services.AddScoped<CargaAcademicaApi>();
 builder.Services.AddScoped<DocentesApi>();
 builder.Services.AddScoped<EspaciosApi>();
 builder.Services.AddScoped<OfertaAcademicaApi>();
