@@ -34,26 +34,7 @@ public sealed record CargaDocenteResumenDto(
     byte TipoDocente,
     int HorasAsignadas,
     byte CargaMaximaSemanal,
-    byte? HorasAutorizadas,
-    int? HorasDisponibles,
-    string? AutorizacionRowVersion);
-
-public sealed record CargaAutorizacionDocenteDto(
-    Guid DocenteId,
-    Guid PeriodoId,
-    byte HorasAutorizadas,
-    string RowVersion);
-
-public sealed class GuardarCargaAutorizadaRequest
-{
-    public Guid DocenteId { get; set; }
-    public Guid PeriodoId { get; set; }
-
-    [Range(1, 40)]
-    public byte HorasAutorizadas { get; set; }
-
-    public string? RowVersion { get; set; }
-}
+    int? HorasDisponibles);
 
 public sealed record CargaGrupoDto(
     Guid Id,

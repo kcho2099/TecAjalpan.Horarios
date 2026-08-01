@@ -43,15 +43,6 @@ public sealed class CargaAcademicaApi(HttpClient httpClient)
             request,
             cancellationToken);
 
-    public Task<ResultadoCarga<CargaAutorizacionDocenteDto>> GuardarCargaAutorizadaAsync(
-        GuardarCargaAutorizadaRequest request,
-        CancellationToken cancellationToken = default) =>
-        EnviarAsync<GuardarCargaAutorizadaRequest, CargaAutorizacionDocenteDto>(
-            HttpMethod.Put,
-            $"api/carga-academica/docentes/{request.DocenteId}/autorizacion/{request.PeriodoId}",
-            request,
-            cancellationToken);
-
     private async Task<ResultadoCarga<TResponse>> EnviarAsync<TRequest, TResponse>(
         HttpMethod metodo,
         string url,

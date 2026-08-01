@@ -87,10 +87,6 @@
   white-space: normal;
 }
 
-.carga-docente-card > .btn-link {
-  justify-self: start;
-}
-
 .carga-barra {
   height: 6px;
   overflow: hidden;

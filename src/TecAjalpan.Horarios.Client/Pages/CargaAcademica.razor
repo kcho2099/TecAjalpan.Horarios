@@ -14,8 +14,8 @@
   @if (configuracion is not null)
   {
     <div class="carga-resumen">
-      <strong>@MateriasAsignadas / @TotalMaterias</strong>
-      <small>materias con docente titular</small>
+      <strong>@HorasAsignadas / @TotalHorasSemanales h</strong>
+      <small>@MateriasAsignadas / @TotalMaterias materias con docente titular</small>
     </div>
   }
 </div>
@@ -108,7 +108,7 @@ else
         @foreach (var docente in configuracion.ResumenDocentes)
         {
           var limite = docente.TipoDocente == 2
-            ? docente.HorasAutorizadas ?? 0
+            ? docente.HorasDisponibles ?? 0
             : docente.CargaMaximaSemanal;
           var porcentaje = limite == 0
             ? 0
@@ -118,27 +118,20 @@ else
               <strong>@docente.DocenteNombre</strong>
               @if (docente.TipoDocente == 2)
               {
-                @if (docente.HorasAutorizadas is null)
+                @if (!docente.HorasDisponibles.HasValue || docente.HorasDisponibles == 0)
                 {
-                  <small>Sin carga autorizada · @(docente.HorasDisponibles?.ToString() ?? "0") bloques disponibles</small>
+                  <small>Sin disponibilidad validada para el periodo</small>
                 }
                 else
                 {
-                  <small>@docente.HorasAsignadas h asignadas · @docente.HorasAutorizadas h autorizadas · @(docente.HorasDisponibles?.ToString() ?? "0") bloques disponibles</small>
+                  <small>@docente.HorasAsignadas h asignadas · @docente.HorasDisponibles bloques disponibles</small>
                 }
               }
               else
               {
-                <small>@docente.HorasAsignadas h asignadas · máximo @docente.CargaMaximaSemanal h</small>
+                <small>@docente.HorasAsignadas h frente a grupo · jornada institucional de @docente.CargaMaximaSemanal h</small>
               }
             </div>
-            @if (puedeEditar && docente.TipoDocente == 2)
-            {
-              <button class="btn-link" type="button" disabled="@procesando"
-                      @onclick="() => EditarAutorizacion(docente)">
-                @(docente.HorasAutorizadas is null ? "Definir autorización" : "Editar autorización")
-              </button>
-            }
             <div class="carga-barra">
               <span style="@($"width: {porcentaje}%")"></span>
             </div>
@@ -243,52 +236,6 @@ else
   </div>
 }
 
-@if (mostrarAutorizacion && docenteAutorizacionActual is not null && puedeEditar)
-{
-  <div class="modal-backdrop" @onclick="CerrarAutorizacion">
-    <section class="modal-card" role="dialog" aria-modal="true"
-             aria-labelledby="titulo-autorizacion" @onclick:stopPropagation>
-      <div class="modal-header">
-        <div>
-          <span class="eyebrow">Carga autorizada del periodo</span>
-          <h2 id="titulo-autorizacion">@docenteAutorizacionActual.DocenteNombre</h2>
-        </div>
-        <button class="icon-button" type="button" disabled="@procesando"
-                @onclick="CerrarAutorizacion">×</button>
-      </div>
-
-      <EditForm Model="modeloAutorizacion" OnValidSubmit="GuardarAutorizacion">
-        <DataAnnotationsValidator />
-        <div class="form-grid">
-          <div class="form-field full">
-            <label>Horas autorizadas por semana</label>
-            <InputNumber @bind-Value="modeloAutorizacion.HorasAutorizadas" min="1" max="40" />
-            <ValidationMessage For="() => modeloAutorizacion.HorasAutorizadas" />
-            <small>
-              Este límite lo define la institución. Los
-              @(docenteAutorizacionActual.HorasDisponibles?.ToString() ?? "0") bloques disponibles
-              sólo indican en qué momentos podrá programarse al docente.
-            </small>
-          </div>
-        </div>
-
-        @if (!string.IsNullOrWhiteSpace(errorAutorizacion))
-        {
-          <div class="alerta-error modal-alert">@errorAutorizacion</div>
-        }
-
-        <div class="modal-actions">
-          <button class="btn-ghost" type="button" disabled="@procesando"
-                  @onclick="CerrarAutorizacion">Cancelar</button>
-          <button class="btn-primary" type="submit" disabled="@procesando">
-            @(procesando ? "Guardando…" : "Guardar autorización")
-          </button>
-        </div>
-      </EditForm>
-    </section>
-  </div>
-}
-
 @if (mostrarFormulario && materiaActual is not null && puedeEditar)
 {
   <div class="modal-backdrop" @onclick="CerrarFormulario">
@@ -364,21 +311,17 @@ else
   private CargaConfiguracionDto? configuracion;
   private CargaMateriaDto? materiaActual;
   private GuardarCargaAcademicaRequest modelo = new();
-  private GuardarCargaAutorizadaRequest modeloAutorizacion = new();
-  private CargaDocenteResumenDto? docenteAutorizacionActual;
   private Guid periodoId;
   private Guid carreraId;
   private Guid modalidadId;
   private bool cargando = true;
   private bool procesando;
   private bool mostrarFormulario;
-  private bool mostrarAutorizacion;
   private bool puedeEditar;
   private bool puedeAutorizar;
   private string? mensaje;
   private string? error;
   private string? errorFormulario;
-  private string? errorAutorizacion;
 
   private bool SeleccionCompleta => periodoId != Guid.Empty
     && carreraId != Guid.Empty
@@ -390,6 +333,12 @@ else
     configuracion?.Grupos.Sum(x => x.Materias.Count) ?? 0;
   private int MateriasAsignadas =>
     configuracion?.Grupos.Sum(x => x.Materias.Count(m => m.Titular is not null)) ?? 0;
+  private int TotalHorasSemanales =>
+    configuracion?.Grupos.Sum(x => x.Materias.Sum(m => (int)m.HorasRequeridas)) ?? 0;
+  private int HorasAsignadas =>
+    configuracion?.Grupos.Sum(x => x.Materias
+      .Where(m => m.Titular is not null)
+      .Sum(m => (int)m.HorasRequeridas)) ?? 0;
 
   protected override async Task OnInitializedAsync()
   {
@@ -462,54 +411,12 @@ else
       return docente.NombreCompleto;
     if (resumen.TipoDocente == 2)
     {
-      if (resumen.HorasAutorizadas is null)
-        return $"{docente.NombreCompleto} · sin carga autorizada · {resumen.HorasDisponibles ?? 0} bloques disponibles";
-      return $"{docente.NombreCompleto} · {resumen.HorasAsignadas} h asignadas · {resumen.HorasAutorizadas} h autorizadas · {resumen.HorasDisponibles ?? 0} bloques disponibles";
+      if (!resumen.HorasDisponibles.HasValue || resumen.HorasDisponibles == 0)
+        return $"{docente.NombreCompleto} · sin disponibilidad validada";
+      return $"{docente.NombreCompleto} · {resumen.HorasAsignadas} h asignadas · {resumen.HorasDisponibles} bloques disponibles";
     }
 
-    return $"{docente.NombreCompleto} · {resumen.HorasAsignadas} h asignadas · máximo {resumen.CargaMaximaSemanal} h";
-  }
-
-  private void EditarAutorizacion(CargaDocenteResumenDto docente)
-  {
-    docenteAutorizacionActual = docente;
-    modeloAutorizacion = new GuardarCargaAutorizadaRequest
-    {
-      DocenteId = docente.DocenteId,
-      PeriodoId = periodoId,
-      HorasAutorizadas = docente.HorasAutorizadas ?? (byte)1,
-      RowVersion = docente.AutorizacionRowVersion
-    };
-    errorAutorizacion = null;
-    mostrarAutorizacion = true;
-  }
-
-  private async Task GuardarAutorizacion()
-  {
-    procesando = true;
-    errorAutorizacion = null;
-    try
-    {
-      var resultado = await Api.GuardarCargaAutorizadaAsync(modeloAutorizacion);
-      if (!resultado.Correcto)
-      {
-        errorAutorizacion = resultado.Mensaje;
-        return;
-      }
-
-      mostrarAutorizacion = false;
-      docenteAutorizacionActual = null;
-      await Cargar();
-      mensaje = "Carga autorizada del docente guardada correctamente.";
-    }
-    catch (Exception ex)
-    {
-      errorAutorizacion = $"No fue posible guardar la autorización: {ex.Message}";
-    }
-    finally
-    {
-      procesando = false;
-    }
+    return $"{docente.NombreCompleto} · {resumen.HorasAsignadas} h frente a grupo · jornada institucional de {resumen.CargaMaximaSemanal} h";
   }
 
   private void Editar(CargaMateriaDto materia)
@@ -623,12 +530,4 @@ else
     errorFormulario = null;
   }
 
-  private void CerrarAutorizacion()
-  {
-    if (procesando)
-      return;
-    mostrarAutorizacion = false;
-    docenteAutorizacionActual = null;
-    errorAutorizacion = null;
-  }
 }
