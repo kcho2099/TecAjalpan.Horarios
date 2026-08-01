@@ -109,25 +109,45 @@ public sealed class CargaAcademicaController(
             .Where(x => x.CarreraId == carreraId && x.Docente.Activo)
             .Select(x => x.DocenteId)
             .ToArrayAsync(cancellationToken);
-        var resumenDocentes = await dbContext.CargasAcademicas.AsNoTracking()
+        var resumenDocentesConsulta = await dbContext.CargasAcademicas.AsNoTracking()
             .Where(x => docentesCarreraIds.Contains(x.DocenteId)
                 && x.OfertaMateria.Activa
                 && x.OfertaMateria.Grupo.PeriodoCarrera.PeriodoId == periodoId)
-            .GroupBy(x => new
+            .Select(x => new
             {
                 x.DocenteId,
                 x.Docente.Apellidos,
                 x.Docente.Nombres,
-                x.Docente.CargaMaximaSemanal
+                x.Docente.CargaMaximaSemanal,
+                HorasAsignadas = (int)x.OfertaMateria.HorasRequeridas
             })
-            .Select(x => new CargaDocenteResumenDto(
+            .GroupBy(x => new
+            {
+                x.DocenteId,
+                x.Apellidos,
+                x.Nombres,
+                x.CargaMaximaSemanal
+            })
+            .Select(x => new
+            {
                 x.Key.DocenteId,
-                x.Key.Apellidos + ", " + x.Key.Nombres,
-                x.Sum(c => (int)c.OfertaMateria.HorasRequeridas),
-                x.Key.CargaMaximaSemanal))
+                x.Key.Apellidos,
+                x.Key.Nombres,
+                x.Key.CargaMaximaSemanal,
+                HorasAsignadas = x.Sum(c => c.HorasAsignadas)
+            })
             .OrderByDescending(x => x.HorasAsignadas)
-            .ThenBy(x => x.DocenteNombre)
+            .ThenBy(x => x.Apellidos)
+            .ThenBy(x => x.Nombres)
             .ToArrayAsync(cancellationToken);
+
+        var resumenDocentes = resumenDocentesConsulta
+            .Select(x => new CargaDocenteResumenDto(
+                x.DocenteId,
+                x.Apellidos + ", " + x.Nombres,
+                x.HorasAsignadas,
+                x.CargaMaximaSemanal))
+            .ToArray();
 
         return Ok(Mapear(configuracion, asignaciones, resumenDocentes));
     }
