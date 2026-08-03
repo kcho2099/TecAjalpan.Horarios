@@ -6,6 +6,7 @@ using TecAjalpan.Horarios.Application.Security;
 using TecAjalpan.Horarios.Contracts.CargaAcademica;
 using TecAjalpan.Horarios.Domain.Entities;
 using TecAjalpan.Horarios.Domain.Enums;
+using TecAjalpan.Horarios.Domain.Rules;
 using TecAjalpan.Horarios.Infrastructure.Persistence;
 
 namespace TecAjalpan.Horarios.Web.Controllers;
@@ -114,44 +115,54 @@ public sealed class CargaAcademicaController(
             .Select(x => new
             {
                 x.DocenteId,
-                HorasAsignadas = (int)x.OfertaMateria.HorasRequeridas
-            })
-            .GroupBy(x => x.DocenteId)
-            .Select(x => new
-            {
-                DocenteId = x.Key,
-                HorasAsignadas = x.Sum(c => c.HorasAsignadas)
+                HorasAsignadas = (int)x.OfertaMateria.HorasRequeridas,
+                TipoModalidad = x.OfertaMateria.Grupo.PeriodoCarrera.Modalidad.Tipo
             })
             .ToArrayAsync(cancellationToken);
 
         var disponibilidadesValidadas = await dbContext.DisponibilidadesDocentes
             .AsNoTracking()
+            .Include(x => x.Bloques)
+            .Include(x => x.Jornadas)
             .Where(x => docentesCarreraIds.Contains(x.DocenteId)
                 && x.PeriodoId == periodoId
                 && x.Validada)
-            .Select(x => new
-            {
-                x.DocenteId,
-                HorasDisponibles = x.Bloques.Count(b => b.Disponible)
-            })
             .ToArrayAsync(cancellationToken);
 
         var resumenDocentes = docentesCarrera
-            .Select(docente =>
+            .Where(docente =>
             {
                 var disponibilidad = disponibilidadesValidadas
                     .SingleOrDefault(x => x.DocenteId == docente.DocenteId);
+                return disponibilidad is not null
+                    && CalcularHorasDisponibles(
+                        docente.Tipo,
+                        disponibilidad,
+                        configuracion.Modalidad.Tipo) > 0;
+            })
+            .Select(docente =>
+            {
+                var disponibilidad = disponibilidadesValidadas
+                    .Single(x => x.DocenteId == docente.DocenteId);
+                var cargas = cargasDocentes
+                    .Where(x => x.DocenteId == docente.DocenteId)
+                    .ToArray();
                 return new CargaDocenteResumenDto(
                     docente.DocenteId,
                     docente.Apellidos + ", " + docente.Nombres,
                     (byte)docente.Tipo,
-                    cargasDocentes
-                        .SingleOrDefault(x => x.DocenteId == docente.DocenteId)
-                        ?.HorasAsignadas ?? 0,
+                    cargas.Sum(x => x.HorasAsignadas),
                     docente.CargaMaximaSemanal,
                     docente.Tipo == TipoDocente.Asignatura
-                        ? disponibilidad?.HorasDisponibles
-                        : null);
+                        ? disponibilidad.Bloques.Count(x => x.Disponible)
+                        : null,
+                    cargas
+                        .Where(x => x.TipoModalidad == configuracion.Modalidad.Tipo)
+                        .Sum(x => x.HorasAsignadas),
+                    CalcularHorasDisponibles(
+                        docente.Tipo,
+                        disponibilidad,
+                        configuracion.Modalidad.Tipo));
             })
             .OrderByDescending(x => x.HorasAsignadas)
             .ThenBy(x => x.DocenteNombre)
@@ -182,6 +193,9 @@ public sealed class CargaAcademicaController(
             .Include(x => x.Grupo)
                 .ThenInclude(x => x.PeriodoCarrera)
                 .ThenInclude(x => x.Periodo)
+            .Include(x => x.Grupo)
+                .ThenInclude(x => x.PeriodoCarrera)
+                .ThenInclude(x => x.Modalidad)
             .SingleOrDefaultAsync(
                 x => x.Id == ofertaMateriaId && x.Activa,
                 cancellationToken);
@@ -326,6 +340,9 @@ public sealed class CargaAcademicaController(
             .Include(x => x.Grupo)
                 .ThenInclude(x => x.PeriodoCarrera)
                 .ThenInclude(x => x.Periodo)
+            .Include(x => x.Grupo)
+                .ThenInclude(x => x.PeriodoCarrera)
+                .ThenInclude(x => x.Modalidad)
             .SingleOrDefaultAsync(
                 x => x.Id == ofertaMateriaId && x.Activa,
                 cancellationToken);
@@ -399,47 +416,84 @@ public sealed class CargaAcademicaController(
 
         var disponibilidad = await dbContext.DisponibilidadesDocentes
             .AsNoTracking()
+            .Include(x => x.Bloques)
+            .Include(x => x.Jornadas)
             .Where(x => x.DocenteId == docenteId
                 && x.PeriodoId == oferta.Grupo.PeriodoCarrera.PeriodoId
                 && x.Validada)
-            .Select(x => new
-            {
-                HorasDisponibles = x.Bloques.Count(b => b.Disponible)
-            })
             .SingleOrDefaultAsync(cancellationToken);
         if (disponibilidad is null)
         {
             return "El docente no tiene disponibilidad validada para este periodo.";
         }
 
-        int? horasDisponibles = docente.Tipo == TipoDocente.Asignatura
-            ? disponibilidad.HorasDisponibles
-            : null;
-        if (docente.Tipo == TipoDocente.Asignatura && horasDisponibles == 0)
-            return "El docente de asignatura no tiene bloques disponibles validados para este periodo.";
+        var tipoModalidad = oferta.Grupo.PeriodoCarrera.Modalidad.Tipo;
+        var horasDisponiblesModalidad = CalcularHorasDisponibles(
+            docente.Tipo,
+            disponibilidad,
+            tipoModalidad);
+        if (horasDisponiblesModalidad == 0)
+        {
+            return tipoModalidad == TipoModalidad.Sabatina
+                ? "El docente no tiene disponibilidad validada para asistir los sábados."
+                : "El docente no tiene disponibilidad validada de lunes a viernes.";
+        }
 
-        var horasAsignadas = await dbContext.CargasAcademicas.AsNoTracking()
+        var cargasAsignadas = await dbContext.CargasAcademicas.AsNoTracking()
             .Where(x => x.DocenteId == docenteId
                 && x.OfertaMateriaId != oferta.Id
                 && x.OfertaMateria.Activa
                 && x.OfertaMateria.Grupo.PeriodoCarrera.PeriodoId
                     == oferta.Grupo.PeriodoCarrera.PeriodoId)
-            .SumAsync(
-                x => (int?)x.OfertaMateria.HorasRequeridas,
-                cancellationToken)
-            ?? 0;
+            .Select(x => new
+            {
+                Horas = (int)x.OfertaMateria.HorasRequeridas,
+                TipoModalidad = x.OfertaMateria.Grupo.PeriodoCarrera.Modalidad.Tipo
+            })
+            .ToArrayAsync(cancellationToken);
+        var horasAsignadas = cargasAsignadas.Sum(x => x.Horas);
         var nuevaCarga = horasAsignadas + oferta.HorasRequeridas;
         if (docente.Tipo == TipoDocente.TiempoCompleto
             && nuevaCarga > docente.CargaMaximaSemanal)
         {
             return $"La asignación llevaría al docente a {nuevaCarga} h frente a grupo y supera su jornada institucional de {docente.CargaMaximaSemanal} h.";
         }
-        if (horasDisponibles.HasValue && nuevaCarga > horasDisponibles.Value)
+        var horasAsignadasModalidad = cargasAsignadas
+            .Where(x => x.TipoModalidad == tipoModalidad)
+            .Sum(x => x.Horas);
+        var nuevaCargaModalidad = horasAsignadasModalidad + oferta.HorasRequeridas;
+        if (nuevaCargaModalidad > horasDisponiblesModalidad)
         {
-            return $"La asignación llevaría al docente a {nuevaCarga} h, pero su disponibilidad validada sólo contiene {horasDisponibles.Value} bloques.";
+            var dias = tipoModalidad == TipoModalidad.Sabatina
+                ? "del sábado"
+                : "de lunes a viernes";
+            return $"La asignación llevaría al docente a {nuevaCargaModalidad} h en esta modalidad, pero su disponibilidad validada {dias} sólo permite {horasDisponiblesModalidad} h.";
         }
 
         return null;
+    }
+
+    private static int CalcularHorasDisponibles(
+        TipoDocente tipoDocente,
+        DisponibilidadDocente disponibilidad,
+        TipoModalidad tipoModalidad)
+    {
+        if (tipoDocente == TipoDocente.Asignatura)
+        {
+            return disponibilidad.Bloques.Count(x =>
+                x.Disponible
+                && ReglasModalidad.PermiteProgramar(tipoModalidad, x.Dia));
+        }
+
+        return disponibilidad.Jornadas
+            .Where(x => ReglasModalidad.PermiteProgramar(tipoModalidad, x.Dia))
+            .Sum(jornada => Enumerable.Range(0, 8).Count(bloque =>
+            {
+                var inicioBloque = new TimeOnly(8 + bloque, 0);
+                var finBloque = new TimeOnly(9 + bloque, 0);
+                return jornada.HoraInicio <= inicioBloque
+                    && jornada.HoraFin >= finBloque;
+            }));
     }
 
     private async Task<CargaMateriaDto> ObtenerMateria(

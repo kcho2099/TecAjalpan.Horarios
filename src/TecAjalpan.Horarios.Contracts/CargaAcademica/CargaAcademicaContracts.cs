@@ -26,7 +26,9 @@ public sealed record CargaDocenteResumenDto(
     byte TipoDocente,
     int HorasAsignadas,
     byte CargaMaximaSemanal,
-    int? HorasDisponibles);
+    int? HorasDisponibles,
+    int HorasAsignadasModalidad,
+    int HorasDisponiblesModalidad);
 
 public sealed record CargaGrupoDto(
     Guid Id,

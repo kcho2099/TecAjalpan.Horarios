@@ -108,28 +108,31 @@ else
         @foreach (var docente in configuracion.ResumenDocentes)
         {
           var limite = docente.TipoDocente == 2
-            ? docente.HorasDisponibles ?? 0
+            ? docente.HorasDisponiblesModalidad
             : docente.CargaMaximaSemanal;
+          var horasParaBarra = docente.TipoDocente == 2
+            ? docente.HorasAsignadasModalidad
+            : docente.HorasAsignadas;
           var porcentaje = limite == 0
             ? 0
-            : Math.Min(100, docente.HorasAsignadas * 100 / limite);
+            : Math.Min(100, horasParaBarra * 100 / limite);
           <article class="carga-docente-card">
             <div>
               <strong>@docente.DocenteNombre</strong>
               @if (docente.TipoDocente == 2)
               {
-                @if (!docente.HorasDisponibles.HasValue || docente.HorasDisponibles == 0)
-                {
-                  <small>Sin disponibilidad validada para el periodo</small>
-                }
-                else
-                {
-                  <small>@docente.HorasAsignadas h asignadas · @docente.HorasDisponibles bloques disponibles</small>
-                }
+                <small>
+                  @docente.HorasAsignadas h asignadas en el periodo ·
+                  @docente.HorasDisponiblesModalidad bloques disponibles en @configuracion.ModalidadNombre
+                </small>
               }
               else
               {
-                <small>@docente.HorasAsignadas h frente a grupo · jornada institucional de @docente.CargaMaximaSemanal h</small>
+                <small>
+                  @docente.HorasAsignadas h frente a grupo ·
+                  @docente.HorasDisponiblesModalidad bloques utilizables en @configuracion.ModalidadNombre ·
+                  jornada institucional de @docente.CargaMaximaSemanal h
+                </small>
               }
             </div>
             <div class="carga-barra">
@@ -266,15 +269,16 @@ else
             <label>Docente titular</label>
             <InputSelect @bind-Value="modelo.DocenteId">
               <option value="@Guid.Empty">Selecciona un docente</option>
-              @foreach (var docente in DocentesCarrera)
+              @foreach (var docente in DocentesElegibles)
               {
                 <option value="@docente.DocenteId">@TextoCargaDocente(docente)</option>
               }
             </InputSelect>
-            @if (!DocentesCarrera.Any())
+            @if (!DocentesElegibles.Any())
             {
               <small class="form-help">
-                No hay docentes de esta carrera con disponibilidad validada en el periodo seleccionado.
+                No hay docentes de esta carrera con disponibilidad validada y horas suficientes
+                para atender esta materia en la modalidad seleccionada.
               </small>
             }
             <small>
@@ -378,6 +382,10 @@ else
   private IEnumerable<CargaDocenteResumenDto> DocentesCarrera =>
     configuracion?.ResumenDocentes.OrderBy(x => x.DocenteNombre)
       ?? Enumerable.Empty<CargaDocenteResumenDto>();
+  private IEnumerable<CargaDocenteResumenDto> DocentesElegibles =>
+    materiaActual is null
+      ? DocentesCarrera
+      : DocentesCarrera.Where(x => PuedeAtenderMateria(x, materiaActual));
   private int TotalMaterias =>
     configuracion?.Grupos.Sum(x => x.Materias.Count) ?? 0;
   private int MateriasAsignadas =>
@@ -456,10 +464,30 @@ else
   {
     if (docente.TipoDocente == 2)
     {
-      return $"{docente.DocenteNombre} · {docente.HorasAsignadas} h asignadas · {docente.HorasDisponibles} bloques disponibles";
+      return $"{docente.DocenteNombre} · {docente.HorasAsignadasModalidad} h asignadas en modalidad · {docente.HorasDisponiblesModalidad} bloques disponibles";
     }
 
-    return $"{docente.DocenteNombre} · {docente.HorasAsignadas} h frente a grupo · jornada institucional de {docente.CargaMaximaSemanal} h";
+    return $"{docente.DocenteNombre} · {docente.HorasAsignadasModalidad} h asignadas en modalidad · {docente.HorasDisponiblesModalidad} bloques utilizables · {docente.HorasAsignadas} h frente a grupo totales";
+  }
+
+  private static bool PuedeAtenderMateria(
+    CargaDocenteResumenDto docente,
+    CargaMateriaDto materia)
+  {
+    var horasActuales = materia.Titular?.DocenteId == docente.DocenteId
+      ? materia.HorasRequeridas
+      : 0;
+    var nuevaCargaModalidad = docente.HorasAsignadasModalidad
+      - horasActuales
+      + materia.HorasRequeridas;
+    if (nuevaCargaModalidad > docente.HorasDisponiblesModalidad)
+    {
+      return false;
+    }
+
+    return docente.TipoDocente != 1
+      || docente.HorasAsignadas - horasActuales + materia.HorasRequeridas
+        <= docente.CargaMaximaSemanal;
   }
 
   private void Editar(CargaMateriaDto materia)

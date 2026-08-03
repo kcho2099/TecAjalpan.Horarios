@@ -105,7 +105,9 @@
               <strong>@pendiente.Docente.Apellidos, @pendiente.Docente.Nombres</strong>
               <small>@pendiente.Docente.TipoNombre · @CarreraAdscripcion(pendiente.Docente)</small>
             </span>
-            <span class="status status-closed">Revisar</span>
+            <span class="status status-closed">
+              @(PuedeValidarDocente(pendiente.Docente) ? "Revisar" : "Sólo consulta")
+            </span>
           </button>
         }
       </div>
@@ -245,11 +247,19 @@ else if (modelo is not null && DocenteSeleccionado is not null)
         }
         else
         {
-          <strong>Validación de Jefatura</strong>
-          <p>Validar confirma que la captura está completa y autoriza su uso en las siguientes etapas.</p>
+          @if (PuedeValidarDisponibilidad)
+          {
+            <strong>Validación de Jefatura</strong>
+            <p>Validar confirma que la captura está completa y autoriza su uso en las siguientes etapas.</p>
+          }
+          else
+          {
+            <strong>Disponibilidad en modo consulta</strong>
+            <p>Sólo la Jefatura de la carrera de adscripción del docente puede validarla.</p>
+          }
         }
       </div>
-      @if (puedeValidar && !modelo.Validada && !string.IsNullOrWhiteSpace(modelo.RowVersion))
+      @if (PuedeValidarDisponibilidad && !modelo.Validada && !string.IsNullOrWhiteSpace(modelo.RowVersion))
       {
         <button type="button"
                 class="btn-secondary"
@@ -287,6 +297,9 @@ else if (modelo is not null && DocenteSeleccionado is not null)
   private bool cambiosPendientes;
   private bool puedeCapturar;
   private bool puedeValidar;
+  private bool esAdministrador;
+  private bool esJefatura;
+  private HashSet<Guid> carrerasUsuario = [];
   private bool cargandoPendientes;
   private int revisionCaptura;
   private List<PendienteValidacion> pendientes = [];
@@ -324,6 +337,8 @@ else if (modelo is not null && DocenteSeleccionado is not null)
   private string CarreraPrincipal =>
     DocenteSeleccionado?.Carreras.SingleOrDefault(x => x.EsPrincipal)?.Nombre
     ?? "Sin carrera de adscripción";
+  private bool PuedeValidarDisponibilidad =>
+    DocenteSeleccionado is not null && PuedeValidarDocente(DocenteSeleccionado);
 
   protected override async Task OnInitializedAsync()
   {
@@ -331,7 +346,13 @@ else if (modelo is not null && DocenteSeleccionado is not null)
     {
       var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
       puedeCapturar = auth.User.IsInRole("Administrador") || auth.User.IsInRole("Secretaría");
-      puedeValidar = auth.User.IsInRole("Administrador") || auth.User.IsInRole("Jefatura");
+      esAdministrador = auth.User.IsInRole("Administrador");
+      esJefatura = auth.User.IsInRole("Jefatura");
+      puedeValidar = esAdministrador || esJefatura;
+      carrerasUsuario = auth.User.FindAll("carrera")
+        .Select(x => Guid.TryParse(x.Value, out var id) ? id : Guid.Empty)
+        .Where(x => x != Guid.Empty)
+        .ToHashSet();
       var docentesTask = DocentesApi.ListarAsync();
       var periodosTask = DocentesApi.ListarPeriodosDisponiblesAsync();
       await Task.WhenAll(docentesTask, periodosTask);
@@ -413,6 +434,21 @@ else if (modelo is not null && DocenteSeleccionado is not null)
 
   private static bool EsAdscrito(DocenteDto docente, Guid carreraId) =>
     docente.Carreras.Any(x => x.Id == carreraId && x.EsPrincipal);
+
+  private bool PuedeValidarDocente(DocenteDto docente)
+  {
+    if (esAdministrador)
+    {
+      return true;
+    }
+
+    var carreraAdscripcionId = docente.Carreras
+      .SingleOrDefault(x => x.EsPrincipal)
+      ?.Id;
+    return esJefatura
+      && carreraAdscripcionId.HasValue
+      && carrerasUsuario.Contains(carreraAdscripcionId.Value);
+  }
 
   private async Task CambiarCarrera()
   {

@@ -214,7 +214,7 @@ public sealed class DisponibilidadesDocentesController(
         {
             return NotFound();
         }
-        if (!await TieneAccesoAsync(docente, cancellationToken))
+        if (!await PuedeValidarAsync(docente, cancellationToken))
         {
             return Forbid();
         }
@@ -311,6 +311,33 @@ public sealed class DisponibilidadesDocentesController(
         User.IsInRole(Roles.Administrador)
         || User.IsInRole(Roles.Secretaria)
             && await TieneAccesoAsync(docente, cancellationToken);
+
+    private async Task<bool> PuedeValidarAsync(
+        Docente docente,
+        CancellationToken cancellationToken)
+    {
+        if (User.IsInRole(Roles.Administrador))
+        {
+            return true;
+        }
+        if (!User.IsInRole(Roles.Jefatura))
+        {
+            return false;
+        }
+
+        var carreraAdscripcionId = docente.Carreras
+            .SingleOrDefault(x => x.EsPrincipal)
+            ?.CarreraId;
+        var usuarioId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return carreraAdscripcionId.HasValue
+            && usuarioId is not null
+            && await dbContext.UsuariosCarreras
+                .AsNoTracking()
+                .AnyAsync(
+                    x => x.UsuarioId == usuarioId
+                        && x.CarreraId == carreraAdscripcionId.Value,
+                    cancellationToken);
+    }
 
     private static string? ValidarBorrador(
         TipoDocente tipo,
