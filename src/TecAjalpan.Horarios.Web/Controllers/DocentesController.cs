@@ -31,7 +31,7 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
         {
             var carreras = await ObtenerCarrerasUsuarioAsync(cancellationToken);
             consulta = consulta.Where(x =>
-                x.Carreras.Any(c => c.EsPrincipal && carreras.Contains(c.CarreraId)));
+                x.Carreras.Any(c => carreras.Contains(c.CarreraId)));
         }
 
         if (!User.IsInRole(Roles.Administrador)
@@ -165,8 +165,6 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
         CancellationToken cancellationToken)
     {
         var docente = await dbContext.Docentes
-            .Include(x => x.Carreras)
-            .ThenInclude(x => x.Carrera)
             .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (docente is null)
         {
@@ -181,10 +179,14 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
             });
         }
 
-        var carreraPrincipalActual = docente.Carreras.SingleOrDefault(x => x.EsPrincipal);
-        if (carreraPrincipalActual is null
+        var carreraPrincipalActualId = await dbContext.DocentesCarreras
+            .AsNoTracking()
+            .Where(x => x.DocenteId == id && x.EsPrincipal)
+            .Select(x => (Guid?)x.CarreraId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (!carreraPrincipalActualId.HasValue
             || !await PuedeAdministrarPrincipalAsync(
-                carreraPrincipalActual.CarreraId,
+                carreraPrincipalActualId.Value,
                 cancellationToken))
         {
             return Forbid();
@@ -208,17 +210,18 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
             await dbContext.Database.BeginTransactionAsync(cancellationToken);
         try
         {
-            if (carreraPrincipalActual.CarreraId != request.CarreraPrincipalId)
-            {
-                carreraPrincipalActual.EsPrincipal = false;
-                await dbContext.SaveChangesAsync(cancellationToken);
-            }
-
             Aplicar(request, docente);
-            SincronizarCarreras(
-                docente,
+            docente.FechaModifica = DateTime.UtcNow;
+            dbContext.Entry(docente)
+                .Property(x => x.FechaModifica)
+                .IsModified = true;
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            await ReemplazarCarrerasAsync(
+                docente.Id,
                 request.CarreraIds,
-                request.CarreraPrincipalId);
+                request.CarreraPrincipalId,
+                cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
@@ -384,33 +387,26 @@ public sealed class DocentesController(ApplicationDbContext dbContext) : Control
             docente.Tipo == TipoDocente.TiempoCompleto ? (byte)40 : (byte)0;
     }
 
-    private void SincronizarCarreras(
-        Docente docente,
+    private async Task ReemplazarCarrerasAsync(
+        Guid docenteId,
         IEnumerable<Guid> carreraIds,
-        Guid carreraPrincipalId)
+        Guid carreraPrincipalId,
+        CancellationToken cancellationToken)
     {
-        var solicitadas = carreraIds.Distinct().ToHashSet();
-        foreach (var relacion in docente.Carreras
-                     .Where(x => !solicitadas.Contains(x.CarreraId))
-                     .ToArray())
-        {
-            dbContext.DocentesCarreras.Remove(relacion);
-        }
+        await dbContext.DocentesCarreras
+            .IgnoreQueryFilters()
+            .Where(x => x.DocenteId == docenteId)
+            .ExecuteDeleteAsync(cancellationToken);
 
-        var actuales = docente.Carreras.Select(x => x.CarreraId).ToHashSet();
-        foreach (var carreraId in solicitadas.Where(x => !actuales.Contains(x)))
-        {
-            docente.Carreras.Add(new DocenteCarrera
+        dbContext.DocentesCarreras.AddRange(
+            carreraIds
+                .Distinct()
+                .Select(carreraId => new DocenteCarrera
             {
+                DocenteId = docenteId,
                 CarreraId = carreraId,
                 EsPrincipal = carreraId == carreraPrincipalId
-            });
-        }
-
-        foreach (var relacion in docente.Carreras)
-        {
-            relacion.EsPrincipal = relacion.CarreraId == carreraPrincipalId;
-        }
+            }));
     }
 
     private async Task CargarCarrerasAsync(

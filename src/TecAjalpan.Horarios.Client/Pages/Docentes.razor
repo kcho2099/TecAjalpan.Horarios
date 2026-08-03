@@ -33,6 +33,16 @@
       <input @bind="Filtro" @bind:event="oninput"
              placeholder="Nombre, número, correo o carrera…" />
     </label>
+    <label class="form-field toolbar-filter">
+      <span>Carrera</span>
+      <select @bind="carreraFiltroId" @bind:after="RestablecerPagina">
+        <option value="@Guid.Empty">Todas las carreras</option>
+        @foreach (var carrera in carrerasDisponibles)
+        {
+          <option value="@carrera.Id">@carrera.Clave · @carrera.Nombre</option>
+        }
+      </select>
+    </label>
     <span class="record-count">@DocentesFiltrados.Count() docente(s)</span>
   </div>
 
@@ -104,13 +114,20 @@
               @if (puedeAdministrar)
               {
                 <td class="actions-column catalogo-actions">
-                  @if (docente.Activo)
+                  @if (PuedeEditar(docente))
                   {
-                    <button class="btn-link" @onclick="() => Editar(docente)">Editar</button>
+                    @if (docente.Activo)
+                    {
+                      <button class="btn-link" @onclick="() => Editar(docente)">Editar</button>
+                    }
+                    <button class="btn-link" @onclick="() => ConfirmarEstado(docente)">
+                      @(docente.Activo ? "Desactivar" : "Activar")
+                    </button>
                   }
-                  <button class="btn-link" @onclick="() => ConfirmarEstado(docente)">
-                    @(docente.Activo ? "Desactivar" : "Activar")
-                  </button>
+                  else
+                  {
+                    <span class="table-secondary" title="La edición corresponde a su carrera de adscripción.">—</span>
+                  }
                 </td>
               }
             </tr>
@@ -283,6 +300,7 @@
   private Guid? docenteId;
   private DocenteDto? docenteAccion;
   private string filtro = string.Empty;
+  private Guid carreraFiltroId;
   private int paginaActual = 1;
 
   private string Filtro
@@ -316,15 +334,24 @@
   private bool puedeAdministrar;
 
   private IEnumerable<DocenteDto> DocentesFiltrados =>
-    docentes.Where(x => string.IsNullOrWhiteSpace(filtro)
-      || x.NumeroTrabajador.Contains(filtro, StringComparison.OrdinalIgnoreCase)
-      || x.Nombres.Contains(filtro, StringComparison.OrdinalIgnoreCase)
-      || x.Apellidos.Contains(filtro, StringComparison.OrdinalIgnoreCase)
-      || x.Correo.Contains(filtro, StringComparison.OrdinalIgnoreCase)
-      || x.TipoNombre.Contains(filtro, StringComparison.OrdinalIgnoreCase)
-      || x.Carreras.Any(c =>
-          c.Clave.Contains(filtro, StringComparison.OrdinalIgnoreCase)
-          || c.Nombre.Contains(filtro, StringComparison.OrdinalIgnoreCase)));
+    docentes.Where(x =>
+      (carreraFiltroId == Guid.Empty
+        || x.Carreras.Any(c => c.Id == carreraFiltroId))
+      && (string.IsNullOrWhiteSpace(filtro)
+        || x.NumeroTrabajador.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+        || x.Nombres.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+        || x.Apellidos.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+        || x.Correo.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+        || x.TipoNombre.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+        || x.Carreras.Any(c =>
+            c.Clave.Contains(filtro, StringComparison.OrdinalIgnoreCase)
+            || c.Nombre.Contains(filtro, StringComparison.OrdinalIgnoreCase))));
+
+  private Task RestablecerPagina()
+  {
+    paginaActual = 1;
+    return Task.CompletedTask;
+  }
 
   protected override async Task OnInitializedAsync()
   {
@@ -360,9 +387,17 @@
     mostrarFormulario = true;
   }
 
+  private bool PuedeEditar(DocenteDto docente)
+  {
+    var principal = docente.Carreras.SingleOrDefault(x => x.EsPrincipal);
+    return puedeAdministrar
+      && principal is not null
+      && carrerasDisponibles.Any(x => x.Id == principal.Id);
+  }
+
   private void Editar(DocenteDto docente)
   {
-    if (!puedeAdministrar || !docente.Activo)
+    if (!PuedeEditar(docente) || !docente.Activo)
     {
       return;
     }

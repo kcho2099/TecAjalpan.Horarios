@@ -39,12 +39,29 @@
       }
     </div>
     <div class="form-field">
+      <label for="carrera">Carrera</label>
+      <select id="carrera" @bind="carreraId" @bind:after="CambiarCarrera">
+        <option value="@Guid.Empty">Todas las carreras</option>
+        @foreach (var carrera in CarrerasDisponibles)
+        {
+          <option value="@carrera.Id">@carrera.Clave · @carrera.Nombre</option>
+        }
+      </select>
+    </div>
+    <div class="form-field">
       <label for="docente">Docente</label>
       <select id="docente" @bind="docenteId" @bind:after="CargarDisponibilidad">
         <option value="@Guid.Empty">Selecciona un docente</option>
-        @foreach (var docente in docentes.Where(x => x.Activo))
+        @foreach (var grupo in GruposDocentes)
         {
-          <option value="@docente.Id">@docente.Apellidos, @docente.Nombres</option>
+          <optgroup label="@($"{grupo.Carrera.Clave} · {grupo.Carrera.Nombre}")">
+            @foreach (var docente in grupo.Docentes)
+            {
+              <option value="@docente.Id">
+                @docente.Apellidos, @docente.Nombres@(EsAdscrito(docente, grupo.Carrera.Id) ? " · Adscrito" : string.Empty)
+              </option>
+            }
+          </optgroup>
         }
       </select>
     </div>
@@ -72,14 +89,14 @@
     {
       <div class="table-state">Buscando disponibilidades pendientes…</div>
     }
-    else if (pendientes.Count == 0)
+    else if (!PendientesFiltradas.Any())
     {
       <div class="table-state">No hay disponibilidades pendientes en el periodo activo.</div>
     }
     else
     {
       <div class="validation-inbox-list">
-        @foreach (var pendiente in pendientes)
+        @foreach (var pendiente in PendientesFiltradas)
         {
           <button type="button"
                   class="validation-inbox-item"
@@ -263,6 +280,7 @@ else if (modelo is not null && DocenteSeleccionado is not null)
   private DisponibilidadDocenteDto? modelo;
   private Guid docenteId;
   private Guid periodoId;
+  private Guid carreraId;
   private bool cargando = true;
   private bool procesando;
   private bool guardando;
@@ -282,6 +300,27 @@ else if (modelo is not null && DocenteSeleccionado is not null)
       .Where(x => !x.EsSemanaSabatina)
       .Sum(CalcularHoras) ?? 0;
   private DocenteDto? DocenteSeleccionado => docentes.SingleOrDefault(x => x.Id == docenteId);
+  private IEnumerable<CarreraOpcion> CarrerasDisponibles =>
+    docentes
+      .Where(x => x.Activo)
+      .SelectMany(x => x.Carreras)
+      .GroupBy(x => x.Id)
+      .Select(x => x.First())
+      .OrderBy(x => x.Nombre)
+      .Select(x => new CarreraOpcion(x.Id, x.Clave, x.Nombre));
+  private IEnumerable<GrupoDocentes> GruposDocentes =>
+    CarrerasDisponibles
+      .Where(x => carreraId == Guid.Empty || x.Id == carreraId)
+      .Select(carrera => new GrupoDocentes(
+        carrera,
+        docentes
+          .Where(x => x.Activo && x.Carreras.Any(c => c.Id == carrera.Id))
+          .OrderBy(x => x.Apellidos)
+          .ThenBy(x => x.Nombres)
+          .ToArray()));
+  private IEnumerable<PendienteValidacion> PendientesFiltradas =>
+    pendientes.Where(x => carreraId == Guid.Empty
+      || x.Docente.Carreras.Any(c => c.Id == carreraId));
   private string CarreraPrincipal =>
     DocenteSeleccionado?.Carreras.SingleOrDefault(x => x.EsPrincipal)?.Nombre
     ?? "Sin carrera de adscripción";
@@ -371,6 +410,20 @@ else if (modelo is not null && DocenteSeleccionado is not null)
   private static string CarreraAdscripcion(DocenteDto docente) =>
     docente.Carreras.SingleOrDefault(x => x.EsPrincipal)?.Nombre
     ?? "Sin carrera de adscripción";
+
+  private static bool EsAdscrito(DocenteDto docente, Guid carreraId) =>
+    docente.Carreras.Any(x => x.Id == carreraId && x.EsPrincipal);
+
+  private async Task CambiarCarrera()
+  {
+    if (docenteId != Guid.Empty
+        && !docentes.Any(x => x.Id == docenteId
+          && (carreraId == Guid.Empty || x.Carreras.Any(c => c.Id == carreraId))))
+    {
+      docenteId = Guid.Empty;
+      await CargarDisponibilidad();
+    }
+  }
 
   private async Task CargarDisponibilidad()
   {
@@ -658,4 +711,10 @@ else if (modelo is not null && DocenteSeleccionado is not null)
   private sealed record PendienteValidacion(
     DocenteDto Docente,
     DisponibilidadDocenteDto Disponibilidad);
+
+  private sealed record CarreraOpcion(Guid Id, string Clave, string Nombre);
+
+  private sealed record GrupoDocentes(
+    CarreraOpcion Carrera,
+    IReadOnlyList<DocenteDto> Docentes);
 }

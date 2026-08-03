@@ -943,6 +943,14 @@ main {
   border-bottom: 1px solid var(--borde);
 }
 
+.toolbar-filter {
+  min-width: min(100%, 22rem);
+}
+
+.toolbar-filter > span {
+  font-weight: 700;
+}
+
 .search-box {
   width: min(380px, 100%);
   display: grid;

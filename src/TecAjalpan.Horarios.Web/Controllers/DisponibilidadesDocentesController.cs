@@ -287,18 +287,21 @@ public sealed class DisponibilidadesDocentesController(
             return true;
         }
 
-        var carreraPrincipalId = docente.Carreras
-            .Where(x => x.EsPrincipal)
-            .Select(x => (Guid?)x.CarreraId)
-            .SingleOrDefault();
         var usuarioId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        return carreraPrincipalId.HasValue
-            && usuarioId is not null
+        if (usuarioId is null)
+        {
+            return false;
+        }
+
+        var carrerasDocente = docente.Carreras
+            .Select(x => x.CarreraId)
+            .ToArray();
+        return carrerasDocente.Length > 0
             && await dbContext.UsuariosCarreras
                 .AsNoTracking()
                 .AnyAsync(
                     x => x.UsuarioId == usuarioId
-                        && x.CarreraId == carreraPrincipalId.Value,
+                        && carrerasDocente.Contains(x.CarreraId),
                     cancellationToken);
     }
 
