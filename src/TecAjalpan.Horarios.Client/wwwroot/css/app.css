@@ -1962,3 +1962,26 @@ main {
   font-size: 14px;
   font-weight: 700;
 }
+.oferta-modulos-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.oferta-modulo-card {
+  border: 1px solid var(--border-color, #ded7d7);
+  border-radius: 14px;
+  padding: 1rem;
+  background: #fff;
+}
+
+.compact-field {
+  max-width: 10rem;
+}
+
+@media (max-width: 900px) {
+  .oferta-modulos-grid {
+    grid-template-columns: 1fr;
+  }
+}

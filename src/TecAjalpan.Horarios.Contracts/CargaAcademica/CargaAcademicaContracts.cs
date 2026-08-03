@@ -28,7 +28,19 @@ public sealed record CargaDocenteResumenDto(
     byte CargaMaximaSemanal,
     int? HorasDisponibles,
     int HorasAsignadasModalidad,
-    int HorasDisponiblesModalidad);
+    int HorasDisponiblesModalidad,
+    int HorasEscolarizadas,
+    IReadOnlyList<CargaDocenteModuloDto> CargaSabatinaModulos,
+    bool DisponibleMatutinoSabatino,
+    bool DisponibleVespertinoSabatino);
+
+public sealed record CargaDocenteModuloDto(
+    byte Modulo,
+    DateOnly FechaInicio,
+    DateOnly FechaFin,
+    int HorasAsignadas,
+    bool OcupaMatutino,
+    bool OcupaVespertino);
 
 public sealed record CargaGrupoDto(
     Guid Id,
@@ -44,8 +56,15 @@ public sealed record CargaMateriaDto(
     string Clave,
     string Nombre,
     byte HorasRequeridas,
+    byte HorasCargaSemanal,
     byte HorasTeoricas,
     byte HorasPracticas,
+    byte? ModuloSabatino,
+    byte? SemanasModulo,
+    DateOnly? FechaInicioModulo,
+    DateOnly? FechaFinModulo,
+    byte? TurnoSabatino,
+    string? HorarioSabatino,
     CargaTitularDto? Titular,
     bool Autorizada);
 

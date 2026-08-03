@@ -51,6 +51,16 @@ public sealed class OfertaAcademicaApi(HttpClient httpClient)
             HttpMethod.Put, $"api/oferta-academica/grupos/{grupoId}/materias",
             request, cancellationToken);
 
+    public Task<ResultadoOferta<GrupoOfertaDto>> GuardarModulosSabatinosAsync(
+        Guid grupoId,
+        GuardarConfiguracionSabatinaRequest request,
+        CancellationToken cancellationToken = default) =>
+        EnviarAsync<GuardarConfiguracionSabatinaRequest, GrupoOfertaDto>(
+            HttpMethod.Put,
+            $"api/oferta-academica/grupos/{grupoId}/modulos-sabatinos",
+            request,
+            cancellationToken);
+
     public Task<ResultadoOferta<bool>> EliminarConfiguracionAsync(
         Guid configuracionId,
         string rowVersion,

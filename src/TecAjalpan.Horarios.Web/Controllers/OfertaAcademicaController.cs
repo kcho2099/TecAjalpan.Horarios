@@ -25,7 +25,7 @@ public sealed class OfertaAcademicaController(
             .Where(x => x.Estado != EstadoPeriodo.Cerrado)
             .OrderByDescending(x => x.FechaInicio)
             .Select(x => new OfertaPeriodoDto(
-                x.Id, x.Nombre, x.SemestresPares,
+                x.Id, x.Nombre, x.FechaInicio, x.FechaFin, x.SemestresPares,
                 x.PermitirExcepcionSemestre, (byte)x.Estado))
             .ToArrayAsync(cancellationToken);
         var carrerasConsulta = dbContext.Carreras.AsNoTracking()
@@ -46,7 +46,7 @@ public sealed class OfertaAcademicaController(
         var modalidades = await dbContext.Modalidades.AsNoTracking()
             .Where(x => x.Activo)
             .OrderBy(x => x.Tipo)
-            .Select(x => new OfertaModalidadDto(x.Id, x.Clave, x.Nombre))
+            .Select(x => new OfertaModalidadDto(x.Id, x.Clave, x.Nombre, (byte)x.Tipo))
             .ToArrayAsync(cancellationToken);
         var idsCarrerasPermitidas = carreras.Select(x => x.Id).ToArray();
         var espacios = await dbContext.Espacios.AsNoTracking()
@@ -74,6 +74,10 @@ public sealed class OfertaAcademicaController(
                 .ThenInclude(x => x.Materia)
             .Include(x => x.Grupos)
                 .ThenInclude(x => x.EspacioBase)
+            .Include(x => x.Grupos)
+                .ThenInclude(x => x.ConfiguracionSabatina)
+                .ThenInclude(x => x!.Modulos)
+                .ThenInclude(x => x.Materias)
             .AsQueryable();
         if (!usuarioActual.TieneRol(Roles.Administrador)
             && !usuarioActual.TieneRol(Roles.Subdireccion))
@@ -113,7 +117,7 @@ public sealed class OfertaAcademicaController(
             .OrderBy(x => x.Nombre)
             .Select(x => new MateriaDisponibleOfertaDto(
                 x.Id, x.Clave, x.Nombre, x.Semestre,
-                x.HorasSemanales, x.Reticula.Clave))
+                x.Creditos, x.HorasSemanales, x.Reticula.Clave))
             .ToArrayAsync(cancellationToken);
         return Ok(materias);
     }
@@ -275,6 +279,9 @@ public sealed class OfertaAcademicaController(
         var grupo = await dbContext.Grupos
             .Include(x => x.PeriodoCarrera).ThenInclude(x => x.Periodo)
             .Include(x => x.Oferta).ThenInclude(x => x.Materia)
+            .Include(x => x.ConfiguracionSabatina)
+                .ThenInclude(x => x!.Modulos)
+                .ThenInclude(x => x.Materias)
             .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (grupo is null) return NotFound();
         if (!usuarioActual.PuedeAccederCarrera(grupo.PeriodoCarrera.CarreraId)) return Forbid();
@@ -293,6 +300,26 @@ public sealed class OfertaAcademicaController(
             cancellationToken);
         if (validas != ids.Count)
             return BadRequest(new { mensaje = "Una materia no corresponde a la carrera, modalidad o semestre del grupo." });
+
+        var idsActuales = grupo.Oferta.Where(x => x.Activa)
+            .Select(x => x.MateriaId).ToHashSet();
+        var cambiaronMaterias = !idsActuales.SetEquals(ids);
+        if (cambiaronMaterias
+            && await dbContext.CargasAcademicas.AnyAsync(
+                x => x.OfertaMateria.GrupoId == id, cancellationToken))
+        {
+            return Conflict(new { mensaje = "Quita primero las asignaciones docentes del grupo antes de cambiar sus materias." });
+        }
+        await using var transaction = await dbContext.Database
+            .BeginTransactionAsync(cancellationToken);
+        if (cambiaronMaterias && grupo.ConfiguracionSabatina is not null)
+        {
+            await dbContext.ConfiguracionesSabatinas
+                .Where(x => x.Id == grupo.ConfiguracionSabatina.Id)
+                .ExecuteDeleteAsync(cancellationToken);
+            dbContext.Entry(grupo.ConfiguracionSabatina).State = EntityState.Detached;
+            grupo.ConfiguracionSabatina = null;
+        }
 
         var horasPorMateria = await dbContext.Materias
             .Where(x => ids.Contains(x.Id))
@@ -331,6 +358,7 @@ public sealed class OfertaAcademicaController(
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             await dbContext.Entry(grupo).Collection(x => x.Oferta).Query()
                 .Include(x => x.Materia).LoadAsync(cancellationToken);
         }
@@ -339,6 +367,131 @@ public sealed class OfertaAcademicaController(
         {
             return Conflict(new { mensaje = "No fue posible sincronizar las materias del grupo." });
         }
+        return Ok(Mapear(grupo));
+    }
+
+    [HttpPut("grupos/{id:guid}/modulos-sabatinos")]
+    public async Task<ActionResult<GrupoOfertaDto>> GuardarModulosSabatinos(
+        Guid id,
+        GuardarConfiguracionSabatinaRequest request,
+        CancellationToken cancellationToken)
+    {
+        var grupo = await dbContext.Grupos
+            .Include(x => x.PeriodoCarrera).ThenInclude(x => x.Periodo)
+            .Include(x => x.PeriodoCarrera).ThenInclude(x => x.Modalidad)
+            .Include(x => x.EspacioBase)
+            .Include(x => x.Oferta).ThenInclude(x => x.Materia)
+            .Include(x => x.ConfiguracionSabatina)
+                .ThenInclude(x => x!.Modulos)
+                .ThenInclude(x => x.Materias)
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (grupo is null) return NotFound();
+        if (!usuarioActual.PuedeAccederCarrera(grupo.PeriodoCarrera.CarreraId))
+            return Forbid();
+        if (!Coincide(request.RowVersionGrupo, grupo.RowVersion))
+            return Conflicto("El grupo");
+        if (grupo.PeriodoCarrera.Periodo.Estado == EstadoPeriodo.Cerrado)
+            return Conflict(new { mensaje = "No se pueden modificar los módulos de un periodo cerrado." });
+        if (grupo.PeriodoCarrera.Modalidad.Tipo != TipoModalidad.Sabatina)
+            return BadRequest(new { mensaje = "Los módulos sólo aplican a grupos de modalidad sabatina." });
+
+        var modulos = request.Modulos.OrderBy(x => x.Orden).ToArray();
+        if (modulos.Length != 3
+            || !modulos.Select(x => x.Orden).SequenceEqual(new byte[] { 1, 2, 3 })
+            || !modulos.Select(x => (int)x.Semanas).Order().SequenceEqual(new[] { 5, 5, 6 }))
+        {
+            return BadRequest(new { mensaje = "Configura los módulos 1, 2 y 3 con una distribución de 5 + 5 + 6 semanas." });
+        }
+
+        var idsMaterias = modulos
+            .SelectMany(x => new[] { x.MateriaMatutinaId, x.MateriaVespertinaId })
+            .ToArray();
+        if (idsMaterias.Any(x => x == Guid.Empty) || idsMaterias.Distinct().Count() != 6)
+            return BadRequest(new { mensaje = "Selecciona seis materias distintas: dos para cada módulo." });
+        var ofertasActivas = grupo.Oferta.Where(x => x.Activa).ToArray();
+        if (ofertasActivas.Length != 6
+            || idsMaterias.Any(x => ofertasActivas.All(o => o.Id != x)))
+        {
+            return BadRequest(new { mensaje = "El grupo sabatino debe tener exactamente seis materias activas y todas deben pertenecer a sus módulos." });
+        }
+
+        if (request.FechaInicio.DayOfWeek != DayOfWeek.Saturday)
+            return BadRequest(new { mensaje = "La fecha de inicio debe ser un sábado." });
+        var primerSabado = request.FechaInicio;
+        var periodo = grupo.PeriodoCarrera.Periodo;
+        if (primerSabado < periodo.FechaInicio)
+            return BadRequest(new { mensaje = "El inicio de los módulos no puede ser anterior al periodo." });
+        var ultimoSabado = primerSabado.AddDays((16 - 1) * 7);
+        if (ultimoSabado > periodo.FechaFin)
+            return BadRequest(new { mensaje = "Los 16 sábados de los módulos exceden la fecha final del periodo." });
+
+        var tieneCarga = await dbContext.CargasAcademicas.AnyAsync(x =>
+            x.OfertaMateria.GrupoId == id, cancellationToken);
+        if (tieneCarga)
+            return Conflict(new { mensaje = "Quita primero las asignaciones docentes del grupo antes de cambiar sus módulos." });
+
+        await using var transaction = await dbContext.Database
+            .BeginTransactionAsync(cancellationToken);
+        var configuracion = grupo.ConfiguracionSabatina;
+        if (configuracion is null)
+        {
+            configuracion = new ConfiguracionSabatina { GrupoId = grupo.Id };
+            dbContext.ConfiguracionesSabatinas.Add(configuracion);
+        }
+        else
+        {
+            var materiasAnteriores = configuracion.Modulos
+                .SelectMany(x => x.Materias).ToArray();
+            await dbContext.ModulosMaterias
+                .Where(x => x.ModuloSabatino.ConfiguracionSabatinaId == configuracion.Id)
+                .ExecuteDeleteAsync(cancellationToken);
+            foreach (var materiaAnterior in materiasAnteriores)
+                dbContext.Entry(materiaAnterior).State = EntityState.Detached;
+            foreach (var moduloExistente in configuracion.Modulos)
+                moduloExistente.Materias.Clear();
+        }
+        configuracion.FechaInicio = primerSabado;
+        configuracion.Validada = false;
+        var fechaModulo = primerSabado;
+        foreach (var moduloRequest in modulos)
+        {
+            var modulo = configuracion.Modulos.SingleOrDefault(
+                x => x.Orden == moduloRequest.Orden);
+            if (modulo is null)
+            {
+                modulo = new ModuloSabatino { Orden = moduloRequest.Orden };
+                configuracion.Modulos.Add(modulo);
+            }
+            modulo.Semanas = moduloRequest.Semanas;
+            modulo.FechaInicio = fechaModulo;
+            modulo.FechaFin = fechaModulo.AddDays((moduloRequest.Semanas - 1) * 7);
+            modulo.Materias.Add(new ModuloMateria
+            {
+                Turno = TurnoSabatino.Matutino,
+                OfertaMateriaId = moduloRequest.MateriaMatutinaId
+            });
+            modulo.Materias.Add(new ModuloMateria
+            {
+                Turno = TurnoSabatino.Vespertino,
+                OfertaMateriaId = moduloRequest.MateriaVespertinaId
+            });
+            fechaModulo = modulo.FechaFin.AddDays(7);
+        }
+        configuracion.Validar();
+        dbContext.Entry(grupo).Property(x => x.Nombre).IsModified = true;
+
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException) { return Conflicto("El grupo"); }
+        catch (DbUpdateException)
+        {
+            return Conflict(new { mensaje = "No fue posible guardar los módulos sabatinos. Recarga e inténtalo nuevamente." });
+        }
+
+        grupo.ConfiguracionSabatina = configuracion;
         return Ok(Mapear(grupo));
     }
 
@@ -411,6 +564,11 @@ public sealed class OfertaAcademicaController(
         await dbContext.Entry(configuracion).Collection(x => x.Grupos).Query()
             .Include(x => x.EspacioBase)
             .LoadAsync(cancellationToken);
+        await dbContext.Entry(configuracion).Collection(x => x.Grupos).Query()
+            .Include(x => x.ConfiguracionSabatina)
+                .ThenInclude(x => x!.Modulos)
+                .ThenInclude(x => x.Materias)
+            .LoadAsync(cancellationToken);
     }
 
     private static void Aplicar(GuardarGrupoOfertaRequest request, Grupo grupo)
@@ -441,9 +599,37 @@ public sealed class OfertaAcademicaController(
         espacio?.Nombre ?? x.EspacioBase?.Nombre,
         espacio?.Tipo ?? x.EspacioBase?.Tipo,
         x.Oferta.Where(o => !o.Eliminado && o.Activa).OrderBy(o => o.Materia.Nombre)
-            .Select(o => new MateriaOfertaDto(
-                o.Id, o.MateriaId, o.Materia.Clave, o.Materia.Nombre,
-                o.HorasRequeridas, o.Activa)).ToArray(),
+            .Select(o =>
+            {
+                var moduloMateria = x.ConfiguracionSabatina?.Modulos
+                    .SelectMany(m => m.Materias.Select(mm => new { Modulo = m, Materia = mm }))
+                    .SingleOrDefault(mm => mm.Materia.OfertaMateriaId == o.Id);
+                return new MateriaOfertaDto(
+                    o.Id, o.MateriaId, o.Materia.Clave, o.Materia.Nombre,
+                    o.Materia.Creditos, o.HorasRequeridas, o.Activa,
+                    moduloMateria?.Modulo.Orden,
+                    moduloMateria?.Modulo.Semanas,
+                    moduloMateria?.Modulo.FechaInicio,
+                    moduloMateria?.Modulo.FechaFin,
+                    moduloMateria is null ? null : (byte)moduloMateria.Materia.Turno,
+                    moduloMateria?.Materia.Turno == TurnoSabatino.Matutino
+                        ? "08:00–12:00"
+                        : moduloMateria?.Materia.Turno == TurnoSabatino.Vespertino
+                            ? "12:00–16:00"
+                            : null);
+            }).ToArray(),
+        x.ConfiguracionSabatina is null
+            ? null
+            : new ConfiguracionSabatinaOfertaDto(
+                x.ConfiguracionSabatina.Id,
+                x.ConfiguracionSabatina.FechaInicio,
+                x.ConfiguracionSabatina.Validada,
+                x.ConfiguracionSabatina.Modulos.OrderBy(m => m.Orden)
+                    .Select(m => new ModuloSabatinoOfertaDto(
+                        m.Id, m.Orden, m.Semanas, m.FechaInicio, m.FechaFin,
+                        m.Materias.Single(mm => mm.Turno == TurnoSabatino.Matutino).OfertaMateriaId,
+                        m.Materias.Single(mm => mm.Turno == TurnoSabatino.Vespertino).OfertaMateriaId))
+                    .ToArray()),
         Convert.ToBase64String(x.RowVersion));
 
     private ConflictObjectResult Conflicto(string entidad) =>

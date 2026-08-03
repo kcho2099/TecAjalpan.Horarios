@@ -87,6 +87,16 @@ public sealed class CargaAcademicaController(
             .Where(x => ofertasIds.Contains(x.OfertaMateriaId))
             .Include(x => x.Docente)
             .ToArrayAsync(cancellationToken);
+        var modulosOferta = await dbContext.ModulosMaterias.AsNoTracking()
+            .Where(x => x.OfertaMateria.Grupo.PeriodoCarrera.PeriodoId == periodoId)
+            .Select(x => new ModuloCargaInfo(
+                x.OfertaMateriaId,
+                x.ModuloSabatino.Orden,
+                x.ModuloSabatino.Semanas,
+                x.ModuloSabatino.FechaInicio,
+                x.ModuloSabatino.FechaFin,
+                x.Turno))
+            .ToDictionaryAsync(x => x.OfertaMateriaId, cancellationToken);
 
         var docentesCarrera = await dbContext.DocentesCarreras.AsNoTracking()
             .Where(x => x.CarreraId == carreraId
@@ -115,7 +125,8 @@ public sealed class CargaAcademicaController(
             .Select(x => new
             {
                 x.DocenteId,
-                HorasAsignadas = (int)x.OfertaMateria.HorasRequeridas,
+                x.OfertaMateriaId,
+                HorasRequeridas = (int)x.OfertaMateria.HorasRequeridas,
                 TipoModalidad = x.OfertaMateria.Grupo.PeriodoCarrera.Modalidad.Tipo
             })
             .ToArrayAsync(cancellationToken);
@@ -147,28 +158,60 @@ public sealed class CargaAcademicaController(
                 var cargas = cargasDocentes
                     .Where(x => x.DocenteId == docente.DocenteId)
                     .ToArray();
+                var horasEscolarizadas = cargas
+                    .Where(x => x.TipoModalidad == TipoModalidad.Escolarizada)
+                    .Sum(x => x.HorasRequeridas);
+                var cargasSabatinas = cargas
+                    .Where(x => x.TipoModalidad == TipoModalidad.Sabatina
+                        && modulosOferta.ContainsKey(x.OfertaMateriaId))
+                    .GroupBy(x => new
+                    {
+                        modulosOferta[x.OfertaMateriaId].Modulo,
+                        modulosOferta[x.OfertaMateriaId].FechaInicio,
+                        modulosOferta[x.OfertaMateriaId].FechaFin
+                    })
+                    .Select(x => new CargaDocenteModuloDto(
+                        x.Key.Modulo,
+                        x.Key.FechaInicio,
+                        x.Key.FechaFin,
+                        x.Count() * 4,
+                        x.Any(c => modulosOferta[c.OfertaMateriaId].Turno == TurnoSabatino.Matutino),
+                        x.Any(c => modulosOferta[c.OfertaMateriaId].Turno == TurnoSabatino.Vespertino)))
+                    .OrderBy(x => x.FechaInicio)
+                    .ToArray();
+                var maximoSabatino = CalcularMaximoSabatino(cargasSabatinas);
                 return new CargaDocenteResumenDto(
                     docente.DocenteId,
                     docente.Apellidos + ", " + docente.Nombres,
                     (byte)docente.Tipo,
-                    cargas.Sum(x => x.HorasAsignadas),
+                    horasEscolarizadas + maximoSabatino,
                     docente.CargaMaximaSemanal,
                     docente.Tipo == TipoDocente.Asignatura
                         ? disponibilidad.Bloques.Count(x => x.Disponible)
                         : null,
                     cargas
-                        .Where(x => x.TipoModalidad == configuracion.Modalidad.Tipo)
-                        .Sum(x => x.HorasAsignadas),
+                        .Where(x => configuracion.Modalidad.Tipo == TipoModalidad.Escolarizada
+                            && x.TipoModalidad == TipoModalidad.Escolarizada)
+                        .Sum(x => x.HorasRequeridas)
+                        + (configuracion.Modalidad.Tipo == TipoModalidad.Sabatina
+                            ? maximoSabatino
+                            : 0),
                     CalcularHorasDisponibles(
                         docente.Tipo,
                         disponibilidad,
-                        configuracion.Modalidad.Tipo));
+                        configuracion.Modalidad.Tipo),
+                    horasEscolarizadas,
+                    cargasSabatinas,
+                    DisponibleEnTurnoSabatino(
+                        docente.Tipo, disponibilidad, TurnoSabatino.Matutino),
+                    DisponibleEnTurnoSabatino(
+                        docente.Tipo, disponibilidad, TurnoSabatino.Vespertino));
             })
             .OrderByDescending(x => x.HorasAsignadas)
             .ThenBy(x => x.DocenteNombre)
             .ToArray();
 
-        return Ok(Mapear(configuracion, asignaciones, resumenDocentes));
+        return Ok(Mapear(configuracion, asignaciones, resumenDocentes, modulosOferta));
     }
 
     [HttpPut("materias/{ofertaMateriaId:guid}")]
@@ -325,7 +368,10 @@ public sealed class CargaAcademicaController(
             return Conflicto();
         }
 
-        return Ok(MapearMateria(oferta, null));
+        return Ok(MapearMateria(
+            oferta,
+            null,
+            await ObtenerModuloOferta(ofertaMateriaId, cancellationToken)));
     }
 
     [HttpPost("materias/{ofertaMateriaId:guid}/autorizar")]
@@ -428,6 +474,11 @@ public sealed class CargaAcademicaController(
         }
 
         var tipoModalidad = oferta.Grupo.PeriodoCarrera.Modalidad.Tipo;
+        var moduloObjetivo = tipoModalidad == TipoModalidad.Sabatina
+            ? await ObtenerModuloOferta(oferta.Id, cancellationToken)
+            : null;
+        if (tipoModalidad == TipoModalidad.Sabatina && moduloObjetivo is null)
+            return "Configura primero el módulo y turno sabatino de la materia en Oferta académica.";
         var horasDisponiblesModalidad = CalcularHorasDisponibles(
             docente.Tipo,
             disponibilidad,
@@ -438,6 +489,11 @@ public sealed class CargaAcademicaController(
                 ? "El docente no tiene disponibilidad validada para asistir los sábados."
                 : "El docente no tiene disponibilidad validada de lunes a viernes.";
         }
+        if (moduloObjetivo is not null
+            && !DisponibleEnTurnoSabatino(docente.Tipo, disponibilidad, moduloObjetivo.Turno))
+        {
+            return $"La disponibilidad del docente no cubre completa la franja {NombreTurno(moduloObjetivo.Turno)}.";
+        }
 
         var cargasAsignadas = await dbContext.CargasAcademicas.AsNoTracking()
             .Where(x => x.DocenteId == docenteId
@@ -447,21 +503,70 @@ public sealed class CargaAcademicaController(
                     == oferta.Grupo.PeriodoCarrera.PeriodoId)
             .Select(x => new
             {
+                x.OfertaMateriaId,
                 Horas = (int)x.OfertaMateria.HorasRequeridas,
                 TipoModalidad = x.OfertaMateria.Grupo.PeriodoCarrera.Modalidad.Tipo
             })
             .ToArrayAsync(cancellationToken);
-        var horasAsignadas = cargasAsignadas.Sum(x => x.Horas);
-        var nuevaCarga = horasAsignadas + oferta.HorasRequeridas;
+        var idsSabatinos = cargasAsignadas
+            .Where(x => x.TipoModalidad == TipoModalidad.Sabatina)
+            .Select(x => x.OfertaMateriaId)
+            .ToArray();
+        var modulosCargas = await dbContext.ModulosMaterias.AsNoTracking()
+            .Where(x => idsSabatinos.Contains(x.OfertaMateriaId))
+            .Select(x => new ModuloCargaInfo(
+                x.OfertaMateriaId,
+                x.ModuloSabatino.Orden,
+                x.ModuloSabatino.Semanas,
+                x.ModuloSabatino.FechaInicio,
+                x.ModuloSabatino.FechaFin,
+                x.Turno))
+            .ToDictionaryAsync(x => x.OfertaMateriaId, cancellationToken);
+        var horasEscolarizadas = cargasAsignadas
+            .Where(x => x.TipoModalidad == TipoModalidad.Escolarizada)
+            .Sum(x => x.Horas);
+        var horasNuevaMateria = tipoModalidad == TipoModalidad.Sabatina
+            ? 4
+            : oferta.HorasRequeridas;
+        var horasSabatinasModulo = moduloObjetivo is null
+            ? 0
+            : CalcularMaximoEnIntervalo(
+                modulosCargas.Values,
+                moduloObjetivo.FechaInicio,
+                moduloObjetivo.FechaFin);
+        var intervalosSabatinos = cargasAsignadas
+            .Where(x => x.TipoModalidad == TipoModalidad.Sabatina
+                && modulosCargas.ContainsKey(x.OfertaMateriaId))
+            .Select(x => modulosCargas[x.OfertaMateriaId])
+            .ToList();
+        if (moduloObjetivo is not null)
+        {
+            var conflictoTurno = cargasAsignadas.Any(x =>
+                x.TipoModalidad == TipoModalidad.Sabatina
+                && modulosCargas.TryGetValue(x.OfertaMateriaId, out var modulo)
+                && SeTraslapan(
+                    modulo.FechaInicio, modulo.FechaFin,
+                    moduloObjetivo.FechaInicio, moduloObjetivo.FechaFin)
+                && modulo.Turno == moduloObjetivo.Turno);
+            if (conflictoTurno)
+                return $"El docente ya tiene otra materia en el módulo {moduloObjetivo.Modulo}, turno {NombreTurno(moduloObjetivo.Turno)}.";
+        }
+
+        if (moduloObjetivo is not null)
+            intervalosSabatinos.Add(moduloObjetivo);
+        var maximoSabatino = CalcularMaximoEnIntervalo(intervalosSabatinos);
+        var nuevaCarga = horasEscolarizadas
+            + (tipoModalidad == TipoModalidad.Escolarizada ? horasNuevaMateria : 0)
+            + maximoSabatino;
         if (docente.Tipo == TipoDocente.TiempoCompleto
             && nuevaCarga > docente.CargaMaximaSemanal)
         {
             return $"La asignación llevaría al docente a {nuevaCarga} h frente a grupo y supera su jornada institucional de {docente.CargaMaximaSemanal} h.";
         }
-        var horasAsignadasModalidad = cargasAsignadas
-            .Where(x => x.TipoModalidad == tipoModalidad)
-            .Sum(x => x.Horas);
-        var nuevaCargaModalidad = horasAsignadasModalidad + oferta.HorasRequeridas;
+        var horasAsignadasModalidad = tipoModalidad == TipoModalidad.Sabatina
+            ? horasSabatinasModulo
+            : horasEscolarizadas;
+        var nuevaCargaModalidad = horasAsignadasModalidad + horasNuevaMateria;
         if (nuevaCargaModalidad > horasDisponiblesModalidad)
         {
             var dias = tipoModalidad == TipoModalidad.Sabatina
@@ -496,6 +601,70 @@ public sealed class CargaAcademicaController(
             }));
     }
 
+    private static bool DisponibleEnTurnoSabatino(
+        TipoDocente tipoDocente,
+        DisponibilidadDocente disponibilidad,
+        TurnoSabatino turno)
+    {
+        var inicio = turno == TurnoSabatino.Matutino ? 1 : 5;
+        if (tipoDocente == TipoDocente.Asignatura)
+        {
+            return Enumerable.Range(inicio, 4).All(bloque =>
+                disponibilidad.Bloques.Any(x =>
+                    x.Dia == DiaAcademico.Sabado
+                    && x.Bloque == bloque
+                    && x.Disponible));
+        }
+
+        var horaInicio = turno == TurnoSabatino.Matutino
+            ? new TimeOnly(8, 0)
+            : new TimeOnly(12, 0);
+        var horaFin = turno == TurnoSabatino.Matutino
+            ? new TimeOnly(12, 0)
+            : new TimeOnly(16, 0);
+        return disponibilidad.Jornadas.Any(x =>
+            x.Dia == DiaAcademico.Sabado
+            && x.HoraInicio <= horaInicio
+            && x.HoraFin >= horaFin);
+    }
+
+    private static int CalcularMaximoSabatino(
+        IReadOnlyCollection<CargaDocenteModuloDto> cargas) =>
+        cargas.Count == 0
+            ? 0
+            : EnumerarSabados(cargas.Min(x => x.FechaInicio), cargas.Max(x => x.FechaFin))
+                .Select(fecha => cargas
+                    .Where(x => x.FechaInicio <= fecha && x.FechaFin >= fecha)
+                    .Sum(x => x.HorasAsignadas))
+                .DefaultIfEmpty(0)
+                .Max();
+
+    private static int CalcularMaximoEnIntervalo(
+        IEnumerable<ModuloCargaInfo> modulos,
+        DateOnly? inicio = null,
+        DateOnly? fin = null)
+    {
+        var intervalos = modulos.ToArray();
+        if (intervalos.Length == 0) return 0;
+        var desde = inicio ?? intervalos.Min(x => x.FechaInicio);
+        var hasta = fin ?? intervalos.Max(x => x.FechaFin);
+        return EnumerarSabados(desde, hasta)
+            .Select(fecha => intervalos.Count(x =>
+                x.FechaInicio <= fecha && x.FechaFin >= fecha) * 4)
+            .DefaultIfEmpty(0)
+            .Max();
+    }
+
+    private static IEnumerable<DateOnly> EnumerarSabados(DateOnly inicio, DateOnly fin)
+    {
+        for (var fecha = inicio; fecha <= fin; fecha = fecha.AddDays(7))
+            yield return fecha;
+    }
+
+    private static bool SeTraslapan(
+        DateOnly inicioA, DateOnly finA, DateOnly inicioB, DateOnly finB) =>
+        inicioA <= finB && inicioB <= finA;
+
     private async Task<CargaMateriaDto> ObtenerMateria(
         Guid ofertaMateriaId,
         CancellationToken cancellationToken)
@@ -508,13 +677,31 @@ public sealed class CargaAcademicaController(
             .SingleOrDefaultAsync(
                 x => x.OfertaMateriaId == ofertaMateriaId,
                 cancellationToken);
-        return MapearMateria(oferta, asignacion);
+        return MapearMateria(
+            oferta,
+            asignacion,
+            await ObtenerModuloOferta(ofertaMateriaId, cancellationToken));
     }
+
+    private Task<ModuloCargaInfo?> ObtenerModuloOferta(
+        Guid ofertaMateriaId,
+        CancellationToken cancellationToken) =>
+        dbContext.ModulosMaterias.AsNoTracking()
+            .Where(x => x.OfertaMateriaId == ofertaMateriaId)
+            .Select(x => new ModuloCargaInfo(
+                x.OfertaMateriaId,
+                x.ModuloSabatino.Orden,
+                x.ModuloSabatino.Semanas,
+                x.ModuloSabatino.FechaInicio,
+                x.ModuloSabatino.FechaFin,
+                x.Turno))
+            .SingleOrDefaultAsync(cancellationToken);
 
     private static CargaConfiguracionDto Mapear(
         PeriodoCarrera configuracion,
         IReadOnlyCollection<CargaAcademica> asignaciones,
-        IReadOnlyList<CargaDocenteResumenDto> resumenDocentes) => new(
+        IReadOnlyList<CargaDocenteResumenDto> resumenDocentes,
+        IReadOnlyDictionary<Guid, ModuloCargaInfo> modulosOferta) => new(
         configuracion.Id,
         configuracion.PeriodoId,
         configuracion.CarreraId,
@@ -538,21 +725,30 @@ public sealed class CargaAcademicaController(
                     .Select(oferta => MapearMateria(
                         oferta,
                         asignaciones.SingleOrDefault(
-                            x => x.OfertaMateriaId == oferta.Id)))
+                            x => x.OfertaMateriaId == oferta.Id),
+                        modulosOferta.GetValueOrDefault(oferta.Id)))
                     .ToArray()))
             .ToArray(),
         resumenDocentes);
 
     private static CargaMateriaDto MapearMateria(
         OfertaMateria oferta,
-        CargaAcademica? asignacion) => new(
+        CargaAcademica? asignacion,
+        ModuloCargaInfo? modulo) => new(
         oferta.Id,
         oferta.MateriaId,
         oferta.Materia.Clave,
         oferta.Materia.Nombre,
         oferta.HorasRequeridas,
+        checked((byte)(modulo is null ? oferta.HorasRequeridas : 4)),
         oferta.Materia.HorasTeoricas,
         oferta.Materia.HorasPracticas,
+        modulo?.Modulo,
+        modulo?.Semanas,
+        modulo?.FechaInicio,
+        modulo?.FechaFin,
+        modulo is null ? null : (byte)modulo.Turno,
+        modulo is null ? null : NombreTurno(modulo.Turno),
         asignacion is null
             ? null
             : new CargaTitularDto(
@@ -569,6 +765,17 @@ public sealed class CargaAcademicaController(
                 asignacion.Observaciones,
                 Convert.ToBase64String(asignacion.RowVersion)),
         asignacion?.Estado == EstadoCarga.Autorizada);
+
+    private static string NombreTurno(TurnoSabatino turno) =>
+        turno == TurnoSabatino.Matutino ? "08:00–12:00" : "12:00–16:00";
+
+    private sealed record ModuloCargaInfo(
+        Guid OfertaMateriaId,
+        byte Modulo,
+        byte Semanas,
+        DateOnly FechaInicio,
+        DateOnly FechaFin,
+        TurnoSabatino Turno);
 
     private static bool VersionCoincide(
         CargaAcademica? asignacion,

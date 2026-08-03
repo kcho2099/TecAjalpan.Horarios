@@ -135,6 +135,13 @@ else
                                   @onclick="() => SeleccionarMaterias(configuracion, grupo)">
                             Materias
                           </button>
+                          @if (EsSabatina(configuracion))
+                          {
+                            <button class="btn-link" disabled="@Ocupado"
+                                    @onclick="() => ConfigurarModulos(configuracion, grupo)">
+                              Módulos
+                            </button>
+                          }
                           <button class="btn-link danger-link" disabled="@Ocupado"
                                   @onclick="() => ConfirmarEliminarGrupo(configuracion, grupo)">
                             Eliminar
@@ -146,7 +153,17 @@ else
                         <div class="oferta-materias-resumen">
                           @foreach (var materia in grupo.Materias)
                           {
-                            <span title="@materia.Nombre">@materia.Clave · @materia.HorasRequeridas h</span>
+                            <span title="@materia.Nombre">
+                              @materia.Clave
+                              @if (materia.Modulo.HasValue)
+                              {
+                                <text> · Módulo @materia.Modulo · @materia.TurnoNombre</text>
+                              }
+                              else
+                              {
+                                <text> · @materia.HorasRequeridas h</text>
+                              }
+                            </span>
                           }
                         </div>
                       }
@@ -159,6 +176,74 @@ else
         </div>
       </section>
     }
+  </div>
+}
+
+@if (mostrarModulos && grupoActual is not null && configuracionActual is not null)
+{
+  <div class="modal-backdrop" @onclick="CerrarModales">
+    <section class="modal-card oferta-materias-modal" role="dialog" aria-modal="true"
+             aria-labelledby="titulo-modulos" @onclick:stopPropagation>
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">@configuracionActual.CarreraClave · @grupoActual.Clave</span>
+          <h2 id="titulo-modulos">Módulos sabatinos 5 + 5 + 6</h2>
+        </div>
+        <button class="icon-button" type="button" disabled="@Ocupado" @onclick="CerrarModales">×</button>
+      </div>
+      <p class="modal-help">
+        Cada materia ocupa cuatro horas por sábado. Puedes cambiar las parejas, el orden y
+        cuál módulo recibe la sexta semana.
+      </p>
+      <div class="form-field">
+        <label>Primer sábado de clases</label>
+        <InputDate @bind-Value="modulosModelo.FechaInicio" />
+      </div>
+      <div class="oferta-modulos-grid">
+        @foreach (var modulo in modulosModelo.Modulos.OrderBy(x => x.Orden))
+        {
+          <article class="oferta-modulo-card">
+            <div class="panel-title">
+              <div><span>Módulo</span><h3>@modulo.Orden</h3></div>
+              <div class="form-field compact-field">
+                <label>Duración</label>
+                <InputSelect @bind-Value="modulo.Semanas">
+                  <option value="5">5 semanas</option>
+                  <option value="6">6 semanas</option>
+                </InputSelect>
+              </div>
+            </div>
+            <div class="form-field full">
+              <label>08:00–12:00</label>
+              <InputSelect @bind-Value="modulo.MateriaMatutinaId">
+                <option value="@Guid.Empty">Selecciona una materia</option>
+                @foreach (var materia in grupoActual.Materias.OrderBy(x => x.Nombre))
+                {
+                  <option value="@materia.Id">@materia.Clave · @materia.Nombre</option>
+                }
+              </InputSelect>
+            </div>
+            <div class="form-field full">
+              <label>12:00–16:00</label>
+              <InputSelect @bind-Value="modulo.MateriaVespertinaId">
+                <option value="@Guid.Empty">Selecciona una materia</option>
+                @foreach (var materia in grupoActual.Materias.OrderBy(x => x.Nombre))
+                {
+                  <option value="@materia.Id">@materia.Clave · @materia.Nombre</option>
+                }
+              </InputSelect>
+            </div>
+          </article>
+        }
+      </div>
+      @ErrorFormulario()
+      <div class="modal-actions">
+        <button class="btn-ghost" type="button" disabled="@Ocupado" @onclick="CerrarModales">Cancelar</button>
+        <button class="btn-primary" type="button" disabled="@guardando" @onclick="GuardarModulos">
+          Guardar módulos
+        </button>
+      </div>
+    </section>
   </div>
 }
 
@@ -359,6 +444,7 @@ else
   private Guid periodoId;
   private CrearPeriodoCarreraRequest configuracionModelo = new();
   private GuardarGrupoOfertaRequest grupoModelo = new();
+  private GuardarConfiguracionSabatinaRequest modulosModelo = new();
   private PeriodoCarreraOfertaDto? configuracionActual;
   private GrupoOfertaDto? grupoActual;
   private Guid? grupoId;
@@ -369,6 +455,7 @@ else
   private bool mostrarConfiguracion;
   private bool mostrarGrupo;
   private bool mostrarMaterias;
+  private bool mostrarModulos;
   private bool mostrarConfirmacionEliminar;
   private string? mensaje;
   private string? error;
@@ -509,6 +596,105 @@ else
     if (seleccionada) materiaIds.Add(id); else materiaIds.Remove(id);
   }
 
+  private bool EsSabatina(PeriodoCarreraOfertaDto configuracion) =>
+    catalogos.Modalidades.Any(x => x.Id == configuracion.ModalidadId && x.Tipo == 2);
+
+  private void ConfigurarModulos(
+    PeriodoCarreraOfertaDto configuracion, GrupoOfertaDto grupo)
+  {
+    configuracionActual = configuracion;
+    grupoActual = grupo;
+    errorFormulario = null;
+    if (grupo.Materias.Count != 6)
+    {
+      errorFormulario = "El grupo sabatino debe tener exactamente seis materias antes de configurar sus módulos.";
+      mostrarModulos = true;
+      modulosModelo = new();
+      return;
+    }
+
+    if (grupo.ConfiguracionSabatina is not null)
+    {
+      modulosModelo = new GuardarConfiguracionSabatinaRequest
+      {
+        FechaInicio = grupo.ConfiguracionSabatina.FechaInicio,
+        RowVersionGrupo = grupo.RowVersion,
+        Modulos = grupo.ConfiguracionSabatina.Modulos.OrderBy(x => x.Orden)
+          .Select(x => new GuardarModuloSabatinoRequest
+          {
+            Orden = x.Orden,
+            Semanas = x.Semanas,
+            MateriaMatutinaId = x.MateriaMatutinaId,
+            MateriaVespertinaId = x.MateriaVespertinaId
+          }).ToList()
+      };
+    }
+    else
+    {
+      var materias = grupo.Materias.OrderByDescending(x => x.Creditos)
+        .ThenBy(x => x.Nombre).ToArray();
+      var inicio = PrimerSabado(PeriodoSeleccionado?.FechaInicio ?? DateOnly.FromDateTime(DateTime.Today));
+      modulosModelo = new GuardarConfiguracionSabatinaRequest
+      {
+        FechaInicio = inicio,
+        RowVersionGrupo = grupo.RowVersion,
+        Modulos = Enumerable.Range(0, 3).Select(i => new GuardarModuloSabatinoRequest
+        {
+          Orden = (byte)(i + 1),
+          Semanas = (byte)(i == 0 ? 6 : 5),
+          MateriaMatutinaId = materias[i * 2].Id,
+          MateriaVespertinaId = materias[i * 2 + 1].Id
+        }).ToList()
+      };
+    }
+    mostrarModulos = true;
+  }
+
+  private async Task GuardarModulos()
+  {
+    if (grupoActual is null) return;
+    var materias = modulosModelo.Modulos
+      .SelectMany(x => new[] { x.MateriaMatutinaId, x.MateriaVespertinaId })
+      .ToArray();
+    if (materias.Any(x => x == Guid.Empty) || materias.Distinct().Count() != 6)
+    {
+      errorFormulario = "Selecciona seis materias distintas: dos para cada módulo.";
+      return;
+    }
+    if (!modulosModelo.Modulos.Select(x => (int)x.Semanas)
+      .Order().SequenceEqual(new[] { 5, 5, 6 }))
+    {
+      errorFormulario = "La duración debe ser 5 + 5 + 6; sólo un módulo puede durar seis semanas.";
+      return;
+    }
+
+    guardando = true;
+    errorFormulario = null;
+    try
+    {
+      var resultado = await Api.GuardarModulosSabatinosAsync(grupoActual.Id, modulosModelo);
+      if (!resultado.Correcto || resultado.Valor is null)
+      {
+        errorFormulario = resultado.Mensaje;
+        return;
+      }
+      await CargarOferta();
+      mensaje = "Módulos sabatinos configurados correctamente.";
+      CerrarModalesForzado();
+    }
+    catch (Exception ex)
+    {
+      errorFormulario = $"No fue posible guardar los módulos: {ex.Message}";
+    }
+    finally { guardando = false; }
+  }
+
+  private static DateOnly PrimerSabado(DateOnly fecha)
+  {
+    var dias = ((int)DayOfWeek.Saturday - (int)fecha.DayOfWeek + 7) % 7;
+    return fecha.AddDays(dias);
+  }
+
   private async Task GuardarMaterias()
   {
     if (grupoActual is null) return;
@@ -591,7 +777,7 @@ else
 
   private void CerrarModalesForzado()
   {
-    mostrarConfiguracion = mostrarGrupo = mostrarMaterias = mostrarConfirmacionEliminar = false;
+    mostrarConfiguracion = mostrarGrupo = mostrarMaterias = mostrarModulos = mostrarConfirmacionEliminar = false;
     configuracionActual = null;
     grupoActual = null;
     errorFormulario = null;

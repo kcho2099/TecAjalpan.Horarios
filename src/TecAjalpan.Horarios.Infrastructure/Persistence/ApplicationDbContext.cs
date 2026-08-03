@@ -382,6 +382,10 @@ public sealed class ApplicationDbContext(
         {
             entity.ToTable("ConfiguracionesSabatinas", "Sabatino");
             entity.HasIndex(x => x.GrupoId).IsUnique();
+            entity.HasOne(x => x.Grupo)
+                .WithOne(x => x.ConfiguracionSabatina)
+                .HasForeignKey<ConfiguracionSabatina>(x => x.GrupoId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
         modelBuilder.Entity<ModuloSabatino>(entity =>
         {

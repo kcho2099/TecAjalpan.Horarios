@@ -76,6 +76,7 @@ public sealed class Grupo : EntidadAuditable
     public string Clave { get; set; } = string.Empty;
     public string Nombre { get; set; } = string.Empty;
     public ICollection<OfertaMateria> Oferta { get; set; } = [];
+    public ConfiguracionSabatina? ConfiguracionSabatina { get; set; }
 }
 
 public sealed class OfertaMateria : EntidadAuditable

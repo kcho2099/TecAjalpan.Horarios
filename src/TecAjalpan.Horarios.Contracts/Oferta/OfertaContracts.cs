@@ -11,13 +11,15 @@ public sealed record OfertaCatalogosDto(
 public sealed record OfertaPeriodoDto(
     Guid Id,
     string Nombre,
+    DateOnly FechaInicio,
+    DateOnly FechaFin,
     bool SemestresPares,
     bool PermitirExcepcionSemestre,
     byte Estado);
 
 public sealed record OfertaCarreraDto(Guid Id, string Clave, string Nombre);
 
-public sealed record OfertaModalidadDto(Guid Id, string Clave, string Nombre);
+public sealed record OfertaModalidadDto(Guid Id, string Clave, string Nombre, byte Tipo);
 
 public sealed record OfertaEspacioDto(
     Guid Id,
@@ -48,6 +50,7 @@ public sealed record GrupoOfertaDto(
     string? EspacioBaseNombre,
     string? EspacioBaseTipo,
     IReadOnlyList<MateriaOfertaDto> Materias,
+    ConfiguracionSabatinaOfertaDto? ConfiguracionSabatina,
     string RowVersion);
 
 public sealed record MateriaOfertaDto(
@@ -55,14 +58,37 @@ public sealed record MateriaOfertaDto(
     Guid MateriaId,
     string Clave,
     string Nombre,
+    byte Creditos,
     byte HorasRequeridas,
-    bool Activa);
+    bool Activa,
+    byte? Modulo,
+    byte? Semanas,
+    DateOnly? FechaInicioModulo,
+    DateOnly? FechaFinModulo,
+    byte? Turno,
+    string? TurnoNombre);
+
+public sealed record ConfiguracionSabatinaOfertaDto(
+    Guid Id,
+    DateOnly FechaInicio,
+    bool Validada,
+    IReadOnlyList<ModuloSabatinoOfertaDto> Modulos);
+
+public sealed record ModuloSabatinoOfertaDto(
+    Guid Id,
+    byte Orden,
+    byte Semanas,
+    DateOnly FechaInicio,
+    DateOnly FechaFin,
+    Guid MateriaMatutinaId,
+    Guid MateriaVespertinaId);
 
 public sealed record MateriaDisponibleOfertaDto(
     Guid Id,
     string Clave,
     string Nombre,
     byte Semestre,
+    byte Creditos,
     byte HorasSemanales,
     string Reticula);
 
@@ -99,6 +125,31 @@ public sealed class GuardarMateriasOfertaRequest
 
     [Required]
     public string RowVersionGrupo { get; set; } = string.Empty;
+}
+
+public sealed class GuardarConfiguracionSabatinaRequest
+{
+    public DateOnly FechaInicio { get; set; }
+
+    [Required]
+    [MinLength(3)]
+    [MaxLength(3)]
+    public List<GuardarModuloSabatinoRequest> Modulos { get; set; } = [];
+
+    [Required]
+    public string RowVersionGrupo { get; set; } = string.Empty;
+}
+
+public sealed class GuardarModuloSabatinoRequest
+{
+    [Range(1, 3)]
+    public byte Orden { get; set; }
+
+    [Range(5, 6)]
+    public byte Semanas { get; set; }
+
+    public Guid MateriaMatutinaId { get; set; }
+    public Guid MateriaVespertinaId { get; set; }
 }
 
 public sealed class EliminarOfertaRequest

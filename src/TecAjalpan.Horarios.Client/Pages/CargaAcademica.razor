@@ -14,7 +14,7 @@
   @if (configuracion is not null)
   {
     <div class="carga-resumen">
-      <strong>@HorasAsignadas / @TotalHorasSemanales h</strong>
+      <strong>@HorasAsignadas / @TotalHorasSemanales h semanales simultáneas</strong>
       <small>@MateriasAsignadas / @TotalMaterias materias con docente titular</small>
     </div>
   }
@@ -102,7 +102,7 @@ else
           <span>Carga acumulada</span>
           <h2>Docentes del periodo</h2>
         </div>
-        <small>La carga incluye todas sus asignaciones dentro del periodo.</small>
+        <small>En sabatino se muestra la carga máxima simultánea de un módulo, no la suma de los tres.</small>
       </div>
       <div class="carga-docentes-grid">
         @foreach (var docente in configuracion.ResumenDocentes)
@@ -124,6 +124,10 @@ else
                 <small>
                   @docente.HorasAsignadas h asignadas en el periodo ·
                   @docente.HorasDisponiblesModalidad bloques disponibles en @configuracion.ModalidadNombre
+                  @if (docente.CargaSabatinaModulos.Count > 0)
+                  {
+                    <text> · @string.Join(" · ", docente.CargaSabatinaModulos.Select(x => $"M{x.Modulo} ({x.FechaInicio:dd/MM}–{x.FechaFin:dd/MM}): {x.HorasAsignadas} h"))</text>
+                  }
                 </small>
               }
               else
@@ -185,8 +189,27 @@ else
                       <small class="table-secondary">
                         @materia.HorasTeoricas h teoría · @materia.HorasPracticas h prácticas
                       </small>
+                      @if (materia.ModuloSabatino.HasValue)
+                      {
+                        <small class="table-secondary">
+                          Módulo @materia.ModuloSabatino · @materia.SemanasModulo semanas ·
+                          @materia.HorarioSabatino · @TextoFechasModulo(materia)
+                        </small>
+                      }
+                      else if (EsSeleccionSabatina)
+                      {
+                        <small class="grupo-sin-espacio">Sin módulo sabatino configurado</small>
+                      }
                     </td>
-                    <td><strong>@materia.HorasRequeridas h</strong></td>
+                    <td>
+                      <strong>@materia.HorasCargaSemanal h</strong>
+                      @if (materia.SemanasModulo.HasValue)
+                      {
+                        <small class="table-secondary">
+                          por sábado · @(materia.HorasCargaSemanal * materia.SemanasModulo.Value) h totales
+                        </small>
+                      }
+                    </td>
                     <td>
                       @if (materia.Titular is null)
                       {
@@ -213,7 +236,7 @@ else
                       </span>
                     </td>
                     <td class="actions-column catalogo-actions">
-                      @if (puedeEditar)
+                      @if (puedeEditar && (!EsSeleccionSabatina || materia.ModuloSabatino.HasValue))
                       {
                         <button class="btn-link" disabled="@procesando"
                                 @onclick="() => Editar(materia)">
@@ -227,7 +250,8 @@ else
                           </button>
                         }
                       }
-                      @if (puedeAutorizar && materia.Titular is not null && !materia.Autorizada)
+                      @if (puedeAutorizar && materia.Titular is not null && !materia.Autorizada
+                        && (!EsSeleccionSabatina || materia.ModuloSabatino.HasValue))
                       {
                         <button class="btn-link" disabled="@procesando"
                                 @onclick="() => Autorizar(materia)">
@@ -254,7 +278,11 @@ else
       <div class="modal-header">
         <div>
           <span class="eyebrow">
-            @materiaActual.Clave · @materiaActual.HorasRequeridas h semanales
+            @materiaActual.Clave · @materiaActual.HorasCargaSemanal h semanales
+            @if (materiaActual.ModuloSabatino.HasValue)
+            {
+              <text> · Módulo @materiaActual.ModuloSabatino · @materiaActual.HorarioSabatino</text>
+            }
           </span>
           <h2 id="titulo-carga">@materiaActual.Nombre</h2>
         </div>
@@ -282,8 +310,10 @@ else
               </small>
             }
             <small>
-              El titular atenderá las @materiaActual.HorasRequeridas horas
-              teóricas y prácticas de la materia.
+              El titular atenderá @materiaActual.HorasCargaSemanal horas por semana
+              @(materiaActual.SemanasModulo.HasValue
+                ? $"durante {materiaActual.SemanasModulo} sábados"
+                : "durante el periodo").
             </small>
           </div>
           <div class="form-field full">
@@ -379,6 +409,8 @@ else
   private bool SeleccionCompleta => periodoId != Guid.Empty
     && carreraId != Guid.Empty
     && modalidadId != Guid.Empty;
+  private bool EsSeleccionSabatina =>
+    catalogos.Modalidades.FirstOrDefault(x => x.Id == modalidadId)?.Clave == "SAB";
   private IEnumerable<CargaDocenteResumenDto> DocentesCarrera =>
     configuracion?.ResumenDocentes.OrderBy(x => x.DocenteNombre)
       ?? Enumerable.Empty<CargaDocenteResumenDto>();
@@ -391,11 +423,22 @@ else
   private int MateriasAsignadas =>
     configuracion?.Grupos.Sum(x => x.Materias.Count(m => m.Titular is not null)) ?? 0;
   private int TotalHorasSemanales =>
-    configuracion?.Grupos.Sum(x => x.Materias.Sum(m => (int)m.HorasRequeridas)) ?? 0;
+    EsSeleccionSabatina
+      ? configuracion?.Grupos.Sum(x => x.Materias
+          .GroupBy(m => m.ModuloSabatino)
+          .Select(g => g.Sum(m => (int)m.HorasCargaSemanal))
+          .DefaultIfEmpty(0).Max()) ?? 0
+      : configuracion?.Grupos.Sum(x => x.Materias.Sum(m => (int)m.HorasCargaSemanal)) ?? 0;
   private int HorasAsignadas =>
-    configuracion?.Grupos.Sum(x => x.Materias
-      .Where(m => m.Titular is not null)
-      .Sum(m => (int)m.HorasRequeridas)) ?? 0;
+    EsSeleccionSabatina
+      ? configuracion?.Grupos.Sum(x => x.Materias
+          .Where(m => m.Titular is not null)
+          .GroupBy(m => m.ModuloSabatino)
+          .Select(g => g.Sum(m => (int)m.HorasCargaSemanal))
+          .DefaultIfEmpty(0).Max()) ?? 0
+      : configuracion?.Grupos.Sum(x => x.Materias
+          .Where(m => m.Titular is not null)
+          .Sum(m => (int)m.HorasCargaSemanal)) ?? 0;
 
   protected override async Task OnInitializedAsync()
   {
@@ -464,31 +507,100 @@ else
   {
     if (docente.TipoDocente == 2)
     {
-      return $"{docente.DocenteNombre} · {docente.HorasAsignadasModalidad} h asignadas en modalidad · {docente.HorasDisponiblesModalidad} bloques disponibles";
+      return $"{docente.DocenteNombre} · {docente.HorasAsignadasModalidad} h máximas por módulo · {docente.HorasDisponiblesModalidad} bloques disponibles";
     }
 
     return $"{docente.DocenteNombre} · {docente.HorasAsignadasModalidad} h asignadas en modalidad · {docente.HorasDisponiblesModalidad} bloques utilizables · {docente.HorasAsignadas} h frente a grupo totales";
   }
 
+  private static string TextoFechasModulo(CargaMateriaDto materia) =>
+    materia.FechaInicioModulo.HasValue && materia.FechaFinModulo.HasValue
+      ? $"{materia.FechaInicioModulo.Value:dd/MM/yyyy}–{materia.FechaFinModulo.Value:dd/MM/yyyy}"
+      : string.Empty;
+
   private static bool PuedeAtenderMateria(
     CargaDocenteResumenDto docente,
     CargaMateriaDto materia)
   {
+    if (materia.TurnoSabatino == 1 && !docente.DisponibleMatutinoSabatino)
+      return false;
+    if (materia.TurnoSabatino == 2 && !docente.DisponibleVespertinoSabatino)
+      return false;
+
     var horasActuales = materia.Titular?.DocenteId == docente.DocenteId
-      ? materia.HorasRequeridas
+      ? materia.HorasCargaSemanal
       : 0;
-    var nuevaCargaModalidad = docente.HorasAsignadasModalidad
-      - horasActuales
-      + materia.HorasRequeridas;
+    var cargasCoincidentes = materia.FechaInicioModulo.HasValue && materia.FechaFinModulo.HasValue
+      ? docente.CargaSabatinaModulos.Where(x => SeTraslapan(
+          x.FechaInicio, x.FechaFin,
+          materia.FechaInicioModulo.Value, materia.FechaFinModulo.Value)).ToArray()
+      : [];
+    if (horasActuales == 0
+      && ((materia.TurnoSabatino == 1 && cargasCoincidentes.Any(x => x.OcupaMatutino))
+        || (materia.TurnoSabatino == 2 && cargasCoincidentes.Any(x => x.OcupaVespertino))))
+      return false;
+    var horasModulo = materia.ModuloSabatino.HasValue
+      ? MaximoHorasEnIntervalo(
+          cargasCoincidentes,
+          materia.FechaInicioModulo!.Value,
+          materia.FechaFinModulo!.Value)
+      : docente.HorasAsignadasModalidad;
+    var nuevaCargaModalidad = horasModulo - horasActuales + materia.HorasCargaSemanal;
     if (nuevaCargaModalidad > docente.HorasDisponiblesModalidad)
     {
       return false;
     }
 
+    var nuevaCargaGlobal = materia.ModuloSabatino.HasValue
+      ? docente.HorasEscolarizadas + MaximoSabatinoConMateria(
+          docente.CargaSabatinaModulos,
+          materia.FechaInicioModulo!.Value,
+          materia.FechaFinModulo!.Value,
+          horasActuales)
+      : docente.HorasAsignadas - horasActuales + materia.HorasCargaSemanal;
     return docente.TipoDocente != 1
-      || docente.HorasAsignadas - horasActuales + materia.HorasRequeridas
-        <= docente.CargaMaximaSemanal;
+      || nuevaCargaGlobal <= docente.CargaMaximaSemanal;
   }
+
+  private static int MaximoHorasEnIntervalo(
+    IReadOnlyCollection<CargaDocenteModuloDto> cargas,
+    DateOnly inicio,
+    DateOnly fin)
+  {
+    var maximo = 0;
+    for (var fecha = inicio; fecha <= fin; fecha = fecha.AddDays(7))
+    {
+      maximo = Math.Max(maximo, cargas
+        .Where(x => x.FechaInicio <= fecha && x.FechaFin >= fecha)
+        .Sum(x => x.HorasAsignadas));
+    }
+    return maximo;
+  }
+
+  private static int MaximoSabatinoConMateria(
+    IReadOnlyCollection<CargaDocenteModuloDto> cargas,
+    DateOnly inicioMateria,
+    DateOnly finMateria,
+    int horasActuales)
+  {
+    var inicio = cargas.Select(x => x.FechaInicio).Append(inicioMateria).Min();
+    var fin = cargas.Select(x => x.FechaFin).Append(finMateria).Max();
+    var maximo = 0;
+    for (var fecha = inicio; fecha <= fin; fecha = fecha.AddDays(7))
+    {
+      var horas = cargas
+        .Where(x => x.FechaInicio <= fecha && x.FechaFin >= fecha)
+        .Sum(x => x.HorasAsignadas);
+      if (fecha >= inicioMateria && fecha <= finMateria)
+        horas = horas - horasActuales + 4;
+      maximo = Math.Max(maximo, horas);
+    }
+    return maximo;
+  }
+
+  private static bool SeTraslapan(
+    DateOnly inicioA, DateOnly finA, DateOnly inicioB, DateOnly finB) =>
+    inicioA <= finB && inicioB <= finA;
 
   private void Editar(CargaMateriaDto materia)
   {

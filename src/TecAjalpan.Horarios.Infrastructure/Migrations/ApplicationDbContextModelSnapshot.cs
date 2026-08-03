@@ -2110,7 +2110,7 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
             modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.ConfiguracionSabatina", b =>
                 {
                     b.HasOne("TecAjalpan.Horarios.Domain.Entities.Grupo", "Grupo")
-                        .WithMany()
+                        .WithOne("ConfiguracionSabatina")
                         .HasForeignKey("GrupoId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -2456,6 +2456,8 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
 
             modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.Grupo", b =>
                 {
+                    b.Navigation("ConfiguracionSabatina");
+
                     b.Navigation("Oferta");
                 });
 
