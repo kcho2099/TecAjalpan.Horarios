@@ -437,6 +437,8 @@ else
 }
 
 @code {
+  private static readonly int[] SemanasModulosSabatinos = [5, 5, 6];
+
   private OfertaCatalogosDto catalogos = new([], [], [], []);
   private List<PeriodoCarreraOfertaDto> configuraciones = [];
   private List<MateriaDisponibleOfertaDto> materiasDisponibles = [];
@@ -662,7 +664,7 @@ else
       return;
     }
     if (!modulosModelo.Modulos.Select(x => (int)x.Semanas)
-      .Order().SequenceEqual(new[] { 5, 5, 6 }))
+      .Order().SequenceEqual(SemanasModulosSabatinos))
     {
       errorFormulario = "La duración debe ser 5 + 5 + 6; sólo un módulo puede durar seis semanas.";
       return;

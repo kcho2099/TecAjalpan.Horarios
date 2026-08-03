@@ -629,8 +629,8 @@ public sealed class CargaAcademicaController(
     }
 
     private static int CalcularMaximoSabatino(
-        IReadOnlyCollection<CargaDocenteModuloDto> cargas) =>
-        cargas.Count == 0
+        CargaDocenteModuloDto[] cargas) =>
+        cargas.Length == 0
             ? 0
             : EnumerarSabados(cargas.Min(x => x.FechaInicio), cargas.Max(x => x.FechaFin))
                 .Select(fecha => cargas

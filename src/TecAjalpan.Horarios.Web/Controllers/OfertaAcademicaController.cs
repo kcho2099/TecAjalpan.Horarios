@@ -17,6 +17,9 @@ public sealed class OfertaAcademicaController(
     ApplicationDbContext dbContext,
     IUsuarioActual usuarioActual) : ControllerBase
 {
+    private static readonly byte[] OrdenesModulosSabatinos = [1, 2, 3];
+    private static readonly int[] SemanasModulosSabatinos = [5, 5, 6];
+
     [HttpGet("catalogos")]
     public async Task<ActionResult<OfertaCatalogosDto>> Catalogos(
         CancellationToken cancellationToken)
@@ -397,8 +400,8 @@ public sealed class OfertaAcademicaController(
 
         var modulos = request.Modulos.OrderBy(x => x.Orden).ToArray();
         if (modulos.Length != 3
-            || !modulos.Select(x => x.Orden).SequenceEqual(new byte[] { 1, 2, 3 })
-            || !modulos.Select(x => (int)x.Semanas).Order().SequenceEqual(new[] { 5, 5, 6 }))
+            || !modulos.Select(x => x.Orden).SequenceEqual(OrdenesModulosSabatinos)
+            || !modulos.Select(x => (int)x.Semanas).Order().SequenceEqual(SemanasModulosSabatinos))
         {
             return BadRequest(new { mensaje = "Configura los módulos 1, 2 y 3 con una distribución de 5 + 5 + 6 semanas." });
         }

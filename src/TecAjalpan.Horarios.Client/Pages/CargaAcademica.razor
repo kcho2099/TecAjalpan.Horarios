@@ -563,7 +563,7 @@ else
   }
 
   private static int MaximoHorasEnIntervalo(
-    IReadOnlyCollection<CargaDocenteModuloDto> cargas,
+    CargaDocenteModuloDto[] cargas,
     DateOnly inicio,
     DateOnly fin)
   {
@@ -578,7 +578,7 @@ else
   }
 
   private static int MaximoSabatinoConMateria(
-    IReadOnlyCollection<CargaDocenteModuloDto> cargas,
+    IReadOnlyList<CargaDocenteModuloDto> cargas,
     DateOnly inicioMateria,
     DateOnly finMateria,
     int horasActuales)
