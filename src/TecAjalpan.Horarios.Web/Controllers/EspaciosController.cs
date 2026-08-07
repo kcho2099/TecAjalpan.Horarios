@@ -363,8 +363,9 @@ public sealed class EspaciosController(
         var actualesIds = actuales.Select(x => x.CarreraId).ToHashSet();
         foreach (var carreraId in carreraIds.Where(x => !actualesIds.Contains(x)))
         {
-            espacio.CarrerasCompartidas.Add(new EspacioCarreraCompartida
+            dbContext.EspaciosCarrerasCompartidas.Add(new EspacioCarreraCompartida
             {
+                EspacioId = espacio.Id,
                 CarreraId = carreraId
             });
         }
