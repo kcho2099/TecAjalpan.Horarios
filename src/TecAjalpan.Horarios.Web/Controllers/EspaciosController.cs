@@ -110,7 +110,7 @@ public sealed class EspaciosController(
             return Forbid();
         }
 
-        if (!CoincideRowVersion(request.RowVersion, espacio.RowVersion))
+        if (!PrepararConcurrencia(espacio, request.RowVersion))
         {
             return Conflicto();
         }
@@ -162,6 +162,14 @@ public sealed class EspaciosController(
 
         Aplicar(request, espacio);
         SincronizarCarrerasCompartidas(idsCompartidasNuevas, espacio);
+
+        // El Espacio es la raíz del agregado. Aun cuando sólo cambien las
+        // carreras compartidas, hacemos que avance su RowVersion para que la
+        // concurrencia se compruebe contra el token que recibió el cliente.
+        dbContext.Entry(espacio)
+            .Property(x => x.FechaModifica)
+            .IsModified = true;
+
         return await Guardar(espacio, creado: false, cancellationToken);
     }
 
@@ -185,7 +193,7 @@ public sealed class EspaciosController(
             return Forbid();
         }
 
-        if (!CoincideRowVersion(request.RowVersion, espacio.RowVersion))
+        if (!PrepararConcurrencia(espacio, request.RowVersion))
         {
             return Conflicto();
         }
@@ -402,9 +410,9 @@ public sealed class EspaciosController(
             mensaje = "El espacio fue modificado por otra persona. Recarga los datos e inténtalo nuevamente."
         });
 
-    private static bool CoincideRowVersion(
-        string? valor,
-        byte[] actual)
+    private bool PrepararConcurrencia(
+        Espacio espacio,
+        string? valor)
     {
         if (string.IsNullOrWhiteSpace(valor))
         {
@@ -413,7 +421,17 @@ public sealed class EspaciosController(
 
         try
         {
-            return Convert.FromBase64String(valor).SequenceEqual(actual);
+            var rowVersionOriginal = Convert.FromBase64String(valor);
+            if (rowVersionOriginal.Length == 0)
+            {
+                return false;
+            }
+
+            dbContext.Entry(espacio)
+                .Property(x => x.RowVersion)
+                .OriginalValue = rowVersionOriginal;
+
+            return true;
         }
         catch (FormatException)
         {
