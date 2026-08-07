@@ -2162,7 +2162,7 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                 {
                     b.HasOne("TecAjalpan.Horarios.Domain.Entities.Grupo", "Grupo")
                         .WithOne("ConfiguracionSabatina")
-                        .HasForeignKey("GrupoId")
+                        .HasForeignKey("TecAjalpan.Horarios.Domain.Entities.ConfiguracionSabatina", "GrupoId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
