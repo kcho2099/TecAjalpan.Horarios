@@ -425,23 +425,49 @@
     mostrarFormulario = true;
   }
 
-  private void Editar(EspacioDto espacio)
+  private async Task Editar(EspacioDto espacio)
   {
-    espacioId = espacio.Id;
-    modelo = new GuardarEspacioRequest
+    procesando = true;
+    mensajeCarga = "Cargando espacio…";
+    error = null;
+
+    try
     {
-      CarreraId = espacio.CarreraId,
-      Clave = espacio.Clave,
-      Nombre = espacio.Nombre,
-      Tipo = espacio.Tipo,
-      Capacidad = espacio.Capacidad,
-      Especialidad = espacio.Especialidad,
-      CarreraIdsCompartidas = espacio.CarreraIdsCompartidas.ToList(),
-      RowVersion = espacio.RowVersion
-    };
-    compartirConOtrasCarreras = modelo.CarreraIdsCompartidas.Count > 0;
-    errorFormulario = null;
-    mostrarFormulario = true;
+      var catalogo = await Api.ListarAsync();
+      carreras = catalogo.Carreras.ToList();
+      espacios = catalogo.Espacios.ToList();
+
+      var espacioActual = espacios.FirstOrDefault(x => x.Id == espacio.Id);
+      if (espacioActual is null)
+      {
+        error = "El aula o laboratorio ya no está disponible. Se actualizaron los datos.";
+        return;
+      }
+
+      espacioId = espacioActual.Id;
+      modelo = new GuardarEspacioRequest
+      {
+        CarreraId = espacioActual.CarreraId,
+        Clave = espacioActual.Clave,
+        Nombre = espacioActual.Nombre,
+        Tipo = espacioActual.Tipo,
+        Capacidad = espacioActual.Capacidad,
+        Especialidad = espacioActual.Especialidad,
+        CarreraIdsCompartidas = espacioActual.CarreraIdsCompartidas.ToList(),
+        RowVersion = espacioActual.RowVersion
+      };
+      compartirConOtrasCarreras = modelo.CarreraIdsCompartidas.Count > 0;
+      errorFormulario = null;
+      mostrarFormulario = true;
+    }
+    catch (Exception ex)
+    {
+      error = $"No fue posible cargar el aula o laboratorio actualizado: {ex.Message}";
+    }
+    finally
+    {
+      procesando = false;
+    }
   }
 
   private async Task Guardar()
