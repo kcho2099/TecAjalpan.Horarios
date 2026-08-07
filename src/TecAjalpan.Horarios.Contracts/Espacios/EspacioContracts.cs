@@ -10,7 +10,8 @@ public sealed record EspacioCarreraDto(
     Guid Id,
     string Clave,
     string Nombre,
-    bool Activo);
+    bool Activo,
+    bool PuedeAdministrar);
 
 public sealed record EspacioDto(
     Guid Id,
@@ -22,6 +23,7 @@ public sealed record EspacioDto(
     string Tipo,
     short? Capacidad,
     string? Especialidad,
+    IReadOnlyList<Guid> CarreraIdsCompartidas,
     bool Activo,
     string RowVersion);
 
@@ -50,6 +52,8 @@ public sealed class GuardarEspacioRequest : IValidatableObject
         ErrorMessage = "La especialidad no puede exceder 120 caracteres.")]
     public string? Especialidad { get; set; }
 
+    public List<Guid> CarreraIdsCompartidas { get; set; } = [];
+
     public string? RowVersion { get; set; }
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
@@ -66,6 +70,20 @@ public sealed class GuardarEspacioRequest : IValidatableObject
             yield return new(
                 "El tipo debe ser Aula o Laboratorio.",
                 [nameof(Tipo)]);
+        }
+
+        if (CarreraIdsCompartidas.Contains(Guid.Empty))
+        {
+            yield return new(
+                "Selecciona carreras válidas para compartir el espacio.",
+                [nameof(CarreraIdsCompartidas)]);
+        }
+
+        if (CarreraIdsCompartidas.Contains(CarreraId))
+        {
+            yield return new(
+                "La carrera responsable ya tiene acceso al espacio y no debe agregarse como compartida.",
+                [nameof(CarreraIdsCompartidas)]);
         }
     }
 }

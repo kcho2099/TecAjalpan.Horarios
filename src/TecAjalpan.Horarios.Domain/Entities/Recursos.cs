@@ -63,9 +63,18 @@ public sealed class Espacio : CatalogoAuditable
 {
     public Guid CarreraId { get; set; }
     public Carrera Carrera { get; set; } = null!;
+    public ICollection<EspacioCarreraCompartida> CarrerasCompartidas { get; set; } = [];
     public string Tipo { get; set; } = "Aula";
     public short? Capacidad { get; set; }
     public string? Especialidad { get; set; }
+}
+
+public sealed class EspacioCarreraCompartida : EntidadAuditable
+{
+    public Guid EspacioId { get; set; }
+    public Espacio Espacio { get; set; } = null!;
+    public Guid CarreraId { get; set; }
+    public Carrera Carrera { get; set; } = null!;
 }
 
 public sealed class DisponibilidadEspacio : EntidadAuditable

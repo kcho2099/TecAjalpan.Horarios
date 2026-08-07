@@ -26,6 +26,7 @@ public sealed class ApplicationDbContext(
     public DbSet<DisponibilidadBloque> DisponibilidadesBloques => Set<DisponibilidadBloque>();
     public DbSet<JornadaDocente> JornadasDocentes => Set<JornadaDocente>();
     public DbSet<Espacio> Espacios => Set<Espacio>();
+    public DbSet<EspacioCarreraCompartida> EspaciosCarrerasCompartidas => Set<EspacioCarreraCompartida>();
     public DbSet<DisponibilidadEspacio> DisponibilidadesEspacios => Set<DisponibilidadEspacio>();
     public DbSet<CargaAcademica> CargasAcademicas => Set<CargaAcademica>();
     public DbSet<ConfiguracionSabatina> ConfiguracionesSabatinas => Set<ConfiguracionSabatina>();
@@ -246,6 +247,21 @@ public sealed class ApplicationDbContext(
             entity.HasIndex(x => new { x.CarreraId, x.Clave }).IsUnique();
             entity.Property(x => x.Tipo).HasMaxLength(60);
             entity.Property(x => x.Especialidad).HasMaxLength(120);
+        });
+        modelBuilder.Entity<EspacioCarreraCompartida>(entity =>
+        {
+            entity.ToTable("EspaciosCarrerasCompartidas", "Catalogos");
+            entity.HasIndex(x => new { x.EspacioId, x.CarreraId })
+                .IsUnique()
+                .HasFilter("[Eliminado] = 0");
+            entity.HasOne(x => x.Espacio)
+                .WithMany(x => x.CarrerasCompartidas)
+                .HasForeignKey(x => x.EspacioId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.Carrera)
+                .WithMany()
+                .HasForeignKey(x => x.CarreraId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
         modelBuilder.Entity<DisponibilidadEspacio>(entity =>
         {

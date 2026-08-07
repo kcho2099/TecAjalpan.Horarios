@@ -21,17 +21,20 @@ public sealed class EspaciosController(
     public async Task<ActionResult<EspaciosCatalogoDto>> Listar(
         CancellationToken cancellationToken)
     {
+        var alcanceInstitucional = TieneAlcanceInstitucional();
+        var idsCarrerasAdministrables = alcanceInstitucional
+            ? []
+            : ObtenerCarrerasAsignadas();
         var carreras = dbContext.Carreras.AsNoTracking();
         var espacios = dbContext.Espacios
             .AsNoTracking()
             .Include(x => x.Carrera)
+            .Include(x => x.CarrerasCompartidas)
             .AsQueryable();
 
-        if (!TieneAlcanceInstitucional())
+        if (!alcanceInstitucional)
         {
-            var idsCarreras = ObtenerCarrerasAsignadas();
-            carreras = carreras.Where(x => idsCarreras.Contains(x.Id));
-            espacios = espacios.Where(x => idsCarreras.Contains(x.CarreraId));
+            espacios = espacios.Where(x => idsCarrerasAdministrables.Contains(x.CarreraId));
         }
 
         var carrerasDto = await carreras
@@ -41,7 +44,8 @@ public sealed class EspaciosController(
                 x.Id,
                 x.Clave,
                 x.Nombre,
-                x.Activo))
+                x.Activo,
+                alcanceInstitucional || idsCarrerasAdministrables.Contains(x.Id)))
             .ToArrayAsync(cancellationToken);
 
         var espaciosEntidades = await espacios
@@ -78,6 +82,7 @@ public sealed class EspaciosController(
 
         var espacio = new Espacio();
         Aplicar(request, espacio);
+        AgregarCarrerasCompartidas(request, espacio);
         dbContext.Espacios.Add(espacio);
 
         var resultado = await Guardar(espacio, creado: true, cancellationToken);
@@ -92,6 +97,7 @@ public sealed class EspaciosController(
     {
         var espacio = await dbContext.Espacios
             .Include(x => x.Carrera)
+            .Include(x => x.CarrerasCompartidas)
             .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (espacio is null)
         {
@@ -130,7 +136,32 @@ public sealed class EspaciosController(
             return Conflict(new { mensaje = validacion });
         }
 
+        var idsCompartidasNuevas = request.CarreraIdsCompartidas
+            .Distinct()
+            .ToArray();
+        var idsRetiradas = espacio.CarrerasCompartidas
+            .Where(x => !x.Eliminado)
+            .Select(x => x.CarreraId)
+            .Except(idsCompartidasNuevas)
+            .ToArray();
+        if (idsRetiradas.Length > 0)
+        {
+            var permisoEnUso = await dbContext.Grupos.AnyAsync(x =>
+                x.EspacioBaseId == espacio.Id
+                && idsRetiradas.Contains(x.PeriodoCarrera.CarreraId)
+                && x.PeriodoCarrera.Periodo.Estado != EstadoPeriodo.Cerrado,
+                cancellationToken);
+            if (permisoEnUso)
+            {
+                return Conflict(new
+                {
+                    mensaje = "No se puede dejar de compartir el espacio con una carrera que lo tiene asignado a un grupo de una oferta vigente. Cambia primero el espacio del grupo."
+                });
+            }
+        }
+
         Aplicar(request, espacio);
+        SincronizarCarrerasCompartidas(idsCompartidasNuevas, espacio);
         return await Guardar(espacio, creado: false, cancellationToken);
     }
 
@@ -142,6 +173,7 @@ public sealed class EspaciosController(
     {
         var espacio = await dbContext.Espacios
             .Include(x => x.Carrera)
+            .Include(x => x.CarrerasCompartidas)
             .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (espacio is null)
         {
@@ -220,6 +252,26 @@ public sealed class EspaciosController(
             return "Ya existe un aula o laboratorio con esa clave.";
         }
 
+
+        var idsCompartidas = request.CarreraIdsCompartidas
+            .Distinct()
+            .ToArray();
+        if (idsCompartidas.Contains(request.CarreraId))
+        {
+            return "La carrera responsable ya tiene acceso al espacio y no debe agregarse como compartida.";
+        }
+
+        if (idsCompartidas.Length > 0)
+        {
+            var carrerasCompartidasValidas = await dbContext.Carreras.CountAsync(
+                x => idsCompartidas.Contains(x.Id) && x.Activo,
+                cancellationToken);
+            if (carrerasCompartidasValidas != idsCompartidas.Length)
+            {
+                return "Todas las carreras seleccionadas para compartir el espacio deben existir y estar activas.";
+            }
+        }
+
         return null;
     }
 
@@ -283,6 +335,42 @@ public sealed class EspaciosController(
             : request.Especialidad.Trim();
     }
 
+    private static void AgregarCarrerasCompartidas(
+        GuardarEspacioRequest request,
+        Espacio espacio)
+    {
+        foreach (var carreraId in request.CarreraIdsCompartidas.Distinct())
+        {
+            espacio.CarrerasCompartidas.Add(new EspacioCarreraCompartida
+            {
+                CarreraId = carreraId
+            });
+        }
+    }
+
+    private void SincronizarCarrerasCompartidas(
+        Guid[] carreraIds,
+        Espacio espacio)
+    {
+        var actuales = espacio.CarrerasCompartidas
+            .Where(x => !x.Eliminado)
+            .ToArray();
+
+        foreach (var relacion in actuales.Where(x => !carreraIds.Contains(x.CarreraId)))
+        {
+            dbContext.EspaciosCarrerasCompartidas.Remove(relacion);
+        }
+
+        var actualesIds = actuales.Select(x => x.CarreraId).ToHashSet();
+        foreach (var carreraId in carreraIds.Where(x => !actualesIds.Contains(x)))
+        {
+            espacio.CarrerasCompartidas.Add(new EspacioCarreraCompartida
+            {
+                CarreraId = carreraId
+            });
+        }
+    }
+
     private static EspacioDto Mapear(Espacio espacio) =>
         Mapear(espacio, espacio.Carrera.Clave, espacio.Carrera.Nombre);
 
@@ -300,6 +388,11 @@ public sealed class EspaciosController(
             espacio.Tipo,
             espacio.Capacidad,
             espacio.Especialidad,
+            espacio.CarrerasCompartidas
+                .Where(x => !x.Eliminado)
+                .Select(x => x.CarreraId)
+                .OrderBy(x => x)
+                .ToArray(),
             espacio.Activo,
             Convert.ToBase64String(espacio.RowVersion));
 

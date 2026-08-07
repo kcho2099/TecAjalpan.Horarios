@@ -8,7 +8,7 @@
   <div>
     <span class="eyebrow">Recursos académicos</span>
     <h1>Aulas y laboratorios</h1>
-    <p>Administra los espacios exclusivos de cada carrera y disponibles para sus grupos.</p>
+    <p>Administra la carrera responsable de cada espacio y, cuando corresponda, con qué otras carreras se comparte.</p>
   </div>
   <button class="btn-primary" @onclick="NuevoEspacio" disabled="@Ocupado">
     + Nuevo espacio
@@ -31,13 +31,13 @@
       <input @bind="Filtro" @bind:event="oninput"
              placeholder="Clave, nombre, tipo o especialidad…" />
     </label>
-    @if (carreras.Count > 1)
+    @if (CarrerasAdministrables.Count() > 1)
     {
       <label class="form-field">
         <span>Carrera</span>
         <select @bind="CarreraFiltro">
           <option value="">Todas las carreras</option>
-          @foreach (var carrera in carreras)
+          @foreach (var carrera in CarrerasAdministrables)
           {
             <option value="@carrera.Id">@carrera.Clave - @carrera.Nombre</option>
           }
@@ -56,7 +56,7 @@
     <div class="empty-state compact">
       <div class="empty-icon">▣</div>
       <h2>No hay espacios para mostrar</h2>
-      <p>Registra las aulas y laboratorios que pertenecen a la carrera.</p>
+      <p>Registra las aulas y laboratorios administrados por la carrera.</p>
       @if (CarrerasActivas.Any())
       {
         <button class="btn-secondary" @onclick="NuevoEspacio">Crear espacio</button>
@@ -75,6 +75,7 @@
             <th>Tipo</th>
             <th>Capacidad</th>
             <th>Especialidad</th>
+            <th>Uso</th>
             <th>Estado</th>
             <th class="actions-column">Acciones</th>
           </tr>
@@ -92,6 +93,17 @@
               <td>@espacio.Tipo</td>
               <td>@(espacio.Capacidad?.ToString() ?? "Sin especificar")</td>
               <td>@(espacio.Especialidad ?? "Sin especificar")</td>
+              <td>
+                @if (espacio.CarreraIdsCompartidas.Count == 0)
+                {
+                  <span>Exclusivo</span>
+                }
+                else
+                {
+                  <strong>Compartido</strong>
+                  <small>@CarrerasCompartidasTexto(espacio)</small>
+                }
+              </td>
               <td>
                 <span class="status @(espacio.Activo ? "status-active" : "status-closed")">
                   @(espacio.Activo ? "Activo" : "Inactivo")
@@ -137,9 +149,9 @@
         <DataAnnotationsValidator />
         <div class="form-grid catalogo-form-grid">
           <div class="form-field full">
-            <label for="carrera">Carrera propietaria</label>
+            <label for="carrera">Carrera responsable</label>
             <InputSelect id="carrera" @bind-Value="modelo.CarreraId"
-                         disabled="@(carreras.Count == 1)">
+                         disabled="@(CarrerasFormulario.Count() == 1)">
               <option value="@Guid.Empty">Selecciona una carrera</option>
               @foreach (var carrera in CarrerasFormulario)
               {
@@ -147,7 +159,7 @@
               }
             </InputSelect>
             <ValidationMessage For="() => modelo.CarreraId" />
-            <small>El espacio será visible y utilizable únicamente por esta carrera.</small>
+            <small>Esta carrera administra el espacio y siempre puede utilizarlo.</small>
           </div>
           <div class="form-field">
             <label for="clave">Clave</label>
@@ -181,6 +193,40 @@
                        placeholder="Ej. Cómputo, electrónica…" />
             <ValidationMessage For="() => modelo.Especialidad" />
           </div>
+          <fieldset class="career-selector full">
+            <legend>Uso compartido</legend>
+            <div class="check-field">
+              <input id="compartir-espacio"
+                     type="checkbox"
+                     checked="@compartirConOtrasCarreras"
+                     @onchange="CambiarUsoCompartido" />
+              <label for="compartir-espacio">
+                <strong>Compartir con otras carreras</strong>
+                <small>Si no se activa, el espacio será exclusivo de la carrera responsable.</small>
+              </label>
+            </div>
+            @if (compartirConOtrasCarreras)
+            {
+              <p class="form-help">Selecciona únicamente las carreras autorizadas para utilizar este espacio.</p>
+              <div class="career-grid">
+                @foreach (var carrera in CarrerasCompartibles)
+                {
+                  <div class="check-field career-card">
+                    <input id="@($"compartir-{carrera.Id}")"
+                           class="career-checkbox"
+                           type="checkbox"
+                           checked="@modelo.CarreraIdsCompartidas.Contains(carrera.Id)"
+                           @onchange="e => CambiarCarreraCompartida(carrera.Id, e)" />
+                    <label class="career-copy" for="@($"compartir-{carrera.Id}")">
+                      <strong>@carrera.Clave</strong>
+                      <small>@carrera.Nombre</small>
+                    </label>
+                  </div>
+                }
+              </div>
+              <ValidationMessage For="() => modelo.CarreraIdsCompartidas" />
+            }
+          </fieldset>
         </div>
 
         @if (!string.IsNullOrWhiteSpace(errorFormulario))
@@ -266,6 +312,7 @@
   private bool cargando = true;
   private bool procesando;
   private bool mostrarFormulario;
+  private bool compartirConOtrasCarreras;
   private string? mensaje;
   private string? error;
   private string? errorFormulario;
@@ -299,11 +346,17 @@
     }
   }
 
+  private IEnumerable<EspacioCarreraDto> CarrerasAdministrables =>
+    carreras.Where(x => x.PuedeAdministrar);
+
   private IEnumerable<EspacioCarreraDto> CarrerasActivas =>
-    carreras.Where(x => x.Activo);
+    carreras.Where(x => x.Activo && x.PuedeAdministrar);
 
   private IEnumerable<EspacioCarreraDto> CarrerasFormulario =>
-    carreras.Where(x => x.Activo || x.Id == modelo.CarreraId);
+    carreras.Where(x => (x.Activo && x.PuedeAdministrar) || x.Id == modelo.CarreraId);
+
+  private IEnumerable<EspacioCarreraDto> CarrerasCompartibles =>
+    carreras.Where(x => x.Activo && x.Id != modelo.CarreraId);
 
   private IEnumerable<EspacioDto> EspaciosFiltrados =>
     espacios.Where(x =>
@@ -331,9 +384,10 @@
       var catalogo = await Api.ListarAsync();
       carreras = catalogo.Carreras.ToList();
       espacios = catalogo.Espacios.ToList();
-      if (carreras.Count == 1)
+      var administrables = CarrerasAdministrables.ToArray();
+      if (administrables.Length == 1)
       {
-        carreraFiltro = carreras[0].Id;
+        carreraFiltro = administrables[0].Id;
       }
     }
     catch (Exception ex)
@@ -366,6 +420,7 @@
           : Guid.Empty,
       Tipo = "Aula"
     };
+    compartirConOtrasCarreras = false;
     errorFormulario = null;
     mostrarFormulario = true;
   }
@@ -381,14 +436,27 @@
       Tipo = espacio.Tipo,
       Capacidad = espacio.Capacidad,
       Especialidad = espacio.Especialidad,
+      CarreraIdsCompartidas = espacio.CarreraIdsCompartidas.ToList(),
       RowVersion = espacio.RowVersion
     };
+    compartirConOtrasCarreras = modelo.CarreraIdsCompartidas.Count > 0;
     errorFormulario = null;
     mostrarFormulario = true;
   }
 
   private async Task Guardar()
   {
+    modelo.CarreraIdsCompartidas.Remove(modelo.CarreraId);
+    if (compartirConOtrasCarreras && modelo.CarreraIdsCompartidas.Count == 0)
+    {
+      errorFormulario = "Selecciona al menos una carrera con la que se compartirá el espacio.";
+      return;
+    }
+    if (!compartirConOtrasCarreras)
+    {
+      modelo.CarreraIdsCompartidas.Clear();
+    }
+
     procesando = true;
     mensajeCarga = espacioId.HasValue
       ? "Actualizando espacio…"
@@ -425,6 +493,37 @@
     espacioAccion = espacio;
     errorAccion = null;
   }
+
+  private void CambiarUsoCompartido(ChangeEventArgs evento)
+  {
+    compartirConOtrasCarreras = evento.Value is bool seleccionado && seleccionado;
+    if (!compartirConOtrasCarreras)
+    {
+      modelo.CarreraIdsCompartidas.Clear();
+    }
+  }
+
+  private void CambiarCarreraCompartida(Guid carreraId, ChangeEventArgs evento)
+  {
+    var seleccionada = evento.Value is bool valor && valor;
+    if (seleccionada)
+    {
+      if (!modelo.CarreraIdsCompartidas.Contains(carreraId))
+      {
+        modelo.CarreraIdsCompartidas.Add(carreraId);
+      }
+    }
+    else
+    {
+      modelo.CarreraIdsCompartidas.Remove(carreraId);
+    }
+  }
+
+  private string CarrerasCompartidasTexto(EspacioDto espacio) =>
+    string.Join(", ", carreras
+      .Where(x => espacio.CarreraIdsCompartidas.Contains(x.Id))
+      .OrderBy(x => x.Nombre)
+      .Select(x => x.Clave));
 
   private async Task CambiarEstado()
   {

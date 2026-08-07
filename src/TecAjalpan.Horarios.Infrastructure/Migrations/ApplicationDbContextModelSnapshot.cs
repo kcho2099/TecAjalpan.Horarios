@@ -1023,6 +1023,57 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                     b.ToTable("Espacios", "Catalogos");
                 });
 
+            modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.EspacioCarreraCompartida", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CarreraId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("Eliminado")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("EspacioId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("FechaCrea")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("FechaElimina")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("FechaModifica")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("UsuarioCrea")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("UsuarioElimina")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("UsuarioModifica")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CarreraId");
+
+                    b.HasIndex("EspacioId", "CarreraId")
+                        .IsUnique()
+                        .HasFilter("[Eliminado] = 0");
+
+                    b.ToTable("EspaciosCarrerasCompartidas", "Catalogos");
+                });
+
             modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.Grupo", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2197,6 +2248,25 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                     b.Navigation("Carrera");
                 });
 
+            modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.EspacioCarreraCompartida", b =>
+                {
+                    b.HasOne("TecAjalpan.Horarios.Domain.Entities.Carrera", "Carrera")
+                        .WithMany()
+                        .HasForeignKey("CarreraId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TecAjalpan.Horarios.Domain.Entities.Espacio", "Espacio")
+                        .WithMany("CarrerasCompartidas")
+                        .HasForeignKey("EspacioId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Carrera");
+
+                    b.Navigation("Espacio");
+                });
+
             modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.Grupo", b =>
                 {
                     b.HasOne("TecAjalpan.Horarios.Domain.Entities.Espacio", "EspacioBase")
@@ -2452,6 +2522,11 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                     b.Navigation("Carreras");
 
                     b.Navigation("Disponibilidades");
+                });
+
+            modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.Espacio", b =>
+                {
+                    b.Navigation("CarrerasCompartidas");
                 });
 
             modelBuilder.Entity("TecAjalpan.Horarios.Domain.Entities.Grupo", b =>

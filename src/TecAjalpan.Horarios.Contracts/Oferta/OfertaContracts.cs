@@ -24,10 +24,12 @@ public sealed record OfertaModalidadDto(Guid Id, string Clave, string Nombre, by
 public sealed record OfertaEspacioDto(
     Guid Id,
     Guid CarreraId,
+    string CarreraClave,
     string Clave,
     string Nombre,
     string Tipo,
-    short? Capacidad);
+    short? Capacidad,
+    IReadOnlyList<Guid> CarreraIdsCompartidas);
 
 public sealed record PeriodoCarreraOfertaDto(
     Guid Id,

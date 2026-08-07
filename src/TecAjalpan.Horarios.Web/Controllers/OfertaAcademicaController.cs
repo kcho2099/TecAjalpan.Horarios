@@ -52,14 +52,28 @@ public sealed class OfertaAcademicaController(
             .Select(x => new OfertaModalidadDto(x.Id, x.Clave, x.Nombre, (byte)x.Tipo))
             .ToArrayAsync(cancellationToken);
         var idsCarrerasPermitidas = carreras.Select(x => x.Id).ToArray();
-        var espacios = await dbContext.Espacios.AsNoTracking()
-            .Where(x => x.Activo && idsCarrerasPermitidas.Contains(x.CarreraId))
+        var espaciosEntidades = await dbContext.Espacios.AsNoTracking()
+            .Include(x => x.Carrera)
+            .Include(x => x.CarrerasCompartidas)
+            .Where(x => x.Activo
+                && (idsCarrerasPermitidas.Contains(x.CarreraId)
+                    || x.CarrerasCompartidas.Any(c =>
+                        idsCarrerasPermitidas.Contains(c.CarreraId))))
             .OrderBy(x => x.Carrera.Nombre)
             .ThenBy(x => x.Tipo)
             .ThenBy(x => x.Nombre)
-            .Select(x => new OfertaEspacioDto(
-                x.Id, x.CarreraId, x.Clave, x.Nombre, x.Tipo, x.Capacidad))
             .ToArrayAsync(cancellationToken);
+        var espacios = espaciosEntidades
+            .Select(x => new OfertaEspacioDto(
+                x.Id,
+                x.CarreraId,
+                x.Carrera.Clave,
+                x.Clave,
+                x.Nombre,
+                x.Tipo,
+                x.Capacidad,
+                x.CarrerasCompartidas.Select(c => c.CarreraId).ToArray()))
+            .ToArray();
         return Ok(new OfertaCatalogosDto(periodos, carreras, modalidades, espacios));
     }
 
@@ -528,18 +542,12 @@ public sealed class OfertaAcademicaController(
         var espacioValido = await dbContext.Espacios.AnyAsync(x =>
             x.Id == request.EspacioBaseId
             && x.Activo
-            && x.CarreraId == configuracion.CarreraId,
+            && (x.CarreraId == configuracion.CarreraId
+                || x.CarrerasCompartidas.Any(c =>
+                    c.CarreraId == configuracion.CarreraId)),
             cancellationToken);
         if (!espacioValido)
-            return "El espacio debe estar activo y pertenecer a la misma carrera del grupo.";
-        var espacioOcupado = await dbContext.Grupos.AnyAsync(x =>
-            x.EspacioBaseId == request.EspacioBaseId
-            && x.PeriodoCarrera.PeriodoId == configuracion.PeriodoId
-            && x.PeriodoCarrera.ModalidadId == configuracion.ModalidadId
-            && (!grupoId.HasValue || x.Id != grupoId.Value),
-            cancellationToken);
-        if (espacioOcupado)
-            return "El aula o laboratorio ya está asignado a otro grupo de la misma modalidad en este periodo.";
+            return "El espacio debe estar activo y pertenecer a la carrera del grupo o estar compartido explícitamente con ella.";
         return null;
     }
 

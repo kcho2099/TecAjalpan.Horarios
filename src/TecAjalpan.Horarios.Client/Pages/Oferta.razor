@@ -367,10 +367,11 @@ else
                 <option value="@espacio.Id">
                   @espacio.Tipo · @espacio.Clave · @espacio.Nombre
                   @(espacio.Capacidad.HasValue ? $"· Capacidad {espacio.Capacidad}" : string.Empty)
+                  @(espacio.CarreraId != configuracionActual?.CarreraId ? $"· Compartido por {espacio.CarreraClave}" : string.Empty)
                 </option>
               }
             </InputSelect>
-            <small>El grupo permanecerá en este espacio durante todo el periodo.</small>
+            <small>Se muestran espacios propios y los compartidos explícitamente con esta carrera. Un mismo espacio nunca puede ocuparse por dos clases en el mismo bloque.</small>
           </div>
         </div>
         @ErrorFormulario()
@@ -472,8 +473,10 @@ else
     configuracionActual is null
       ? []
       : catalogos.Espacios
-        .Where(x => x.CarreraId == configuracionActual.CarreraId)
-        .OrderBy(x => x.Tipo)
+        .Where(x => x.CarreraId == configuracionActual.CarreraId
+          || x.CarreraIdsCompartidas.Contains(configuracionActual.CarreraId))
+        .OrderByDescending(x => x.CarreraId == configuracionActual.CarreraId)
+        .ThenBy(x => x.Tipo)
         .ThenBy(x => x.Nombre);
   private string TextoCarga => eliminando
     ? "Eliminando de la oferta…"
