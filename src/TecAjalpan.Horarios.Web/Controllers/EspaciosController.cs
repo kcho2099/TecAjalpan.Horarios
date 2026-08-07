@@ -110,11 +110,6 @@ public sealed class EspaciosController(
             return Forbid();
         }
 
-        if (!PrepararConcurrencia(espacio, request.RowVersion))
-        {
-            return Conflicto();
-        }
-
         if (espacio.CarreraId != request.CarreraId
             && await dbContext.Grupos.AnyAsync(
                 x => x.EspacioBaseId == espacio.Id,
@@ -164,8 +159,9 @@ public sealed class EspaciosController(
         SincronizarCarrerasCompartidas(idsCompartidasNuevas, espacio);
 
         // El Espacio es la raíz del agregado. Aun cuando sólo cambien las
-        // carreras compartidas, hacemos que avance su RowVersion para que la
-        // concurrencia se compruebe contra el token que recibió el cliente.
+        // carreras compartidas, hacemos que avance su RowVersion. EF conserva
+        // como OriginalValue la versión que acaba de leer de SQL y la valida
+        // de forma atómica al ejecutar el UPDATE.
         dbContext.Entry(espacio)
             .Property(x => x.FechaModifica)
             .IsModified = true;
@@ -191,11 +187,6 @@ public sealed class EspaciosController(
         if (!usuarioActual.PuedeAccederCarrera(espacio.CarreraId))
         {
             return Forbid();
-        }
-
-        if (!PrepararConcurrencia(espacio, request.RowVersion))
-        {
-            return Conflicto();
         }
 
         if (espacio.Activo == request.Activo)
@@ -410,32 +401,5 @@ public sealed class EspaciosController(
             mensaje = "El espacio fue modificado por otra persona. Recarga los datos e inténtalo nuevamente."
         });
 
-    private bool PrepararConcurrencia(
-        Espacio espacio,
-        string? valor)
-    {
-        if (string.IsNullOrWhiteSpace(valor))
-        {
-            return false;
-        }
 
-        try
-        {
-            var rowVersionOriginal = Convert.FromBase64String(valor);
-            if (rowVersionOriginal.Length == 0)
-            {
-                return false;
-            }
-
-            dbContext.Entry(espacio)
-                .Property(x => x.RowVersion)
-                .OriginalValue = rowVersionOriginal;
-
-            return true;
-        }
-        catch (FormatException)
-        {
-            return false;
-        }
-    }
 }
