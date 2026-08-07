@@ -195,7 +195,7 @@
           </div>
           <fieldset class="career-selector full">
             <legend>Uso compartido</legend>
-            <div class="check-field">
+            <div class="check-field sharing-toggle">
               <input id="compartir-espacio"
                      type="checkbox"
                      checked="@compartirConOtrasCarreras"
@@ -208,10 +208,10 @@
             @if (compartirConOtrasCarreras)
             {
               <p class="form-help">Selecciona únicamente las carreras autorizadas para utilizar este espacio.</p>
-              <div class="career-grid">
+              <div class="sharing-career-list">
                 @foreach (var carrera in CarrerasCompartibles)
                 {
-                  <div class="check-field career-card">
+                  <div class="check-field sharing-career-row">
                     <input id="@($"compartir-{carrera.Id}")"
                            class="career-checkbox"
                            type="checkbox"
