@@ -10,7 +10,7 @@ public sealed class CargaAcademicaApi(HttpClient httpClient)
         CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<CargaAcademicaCatalogosDto>(
             "api/carga-academica/catalogos", cancellationToken)
-        ?? new([], [], [], []);
+        ?? new([], [], []);
 
     public async Task<ResultadoCarga<CargaConfiguracionDto>> ObtenerAsync(
         Guid periodoId,
