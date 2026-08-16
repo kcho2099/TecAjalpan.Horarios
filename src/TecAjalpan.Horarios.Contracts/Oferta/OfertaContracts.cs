@@ -73,6 +73,7 @@ public sealed record MateriaOfertaDto(
 public sealed record ConfiguracionSabatinaOfertaDto(
     Guid Id,
     DateOnly FechaInicio,
+    byte SemanasEfectivas,
     bool Validada,
     IReadOnlyList<ModuloSabatinoOfertaDto> Modulos);
 
@@ -82,8 +83,8 @@ public sealed record ModuloSabatinoOfertaDto(
     byte Semanas,
     DateOnly FechaInicio,
     DateOnly FechaFin,
-    Guid MateriaMatutinaId,
-    Guid MateriaVespertinaId);
+    Guid MateriaId,
+    byte Turno);
 
 public sealed record MateriaDisponibleOfertaDto(
     Guid Id,
@@ -134,8 +135,7 @@ public sealed class GuardarConfiguracionSabatinaRequest
     public DateOnly FechaInicio { get; set; }
 
     [Required]
-    [MinLength(3)]
-    [MaxLength(3)]
+    [MinLength(2, ErrorMessage = "Configura al menos un módulo por turno.")]
     public List<GuardarModuloSabatinoRequest> Modulos { get; set; } = [];
 
     [Required]
@@ -144,14 +144,16 @@ public sealed class GuardarConfiguracionSabatinaRequest
 
 public sealed class GuardarModuloSabatinoRequest
 {
-    [Range(1, 3)]
-    public byte Orden { get; set; }
+    [Range(1, byte.MaxValue)]
+    public int Orden { get; set; }
 
-    [Range(5, 6)]
-    public byte Semanas { get; set; }
+    [Range(1, 18)]
+    public int Semanas { get; set; }
 
-    public Guid MateriaMatutinaId { get; set; }
-    public Guid MateriaVespertinaId { get; set; }
+    public Guid MateriaId { get; set; }
+
+    [Range(1, 2)]
+    public int Turno { get; set; }
 }
 
 public sealed class EliminarOfertaRequest

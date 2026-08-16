@@ -5,6 +5,8 @@ namespace TecAjalpan.Horarios.Domain.Entities;
 
 public sealed class ConfiguracionSabatina : EntidadAuditable
 {
+    public const byte SemanasEfectivas = 18;
+
     public Guid GrupoId { get; set; }
     public Grupo Grupo { get; set; } = null!;
     public DateOnly FechaInicio { get; set; }
@@ -14,23 +16,67 @@ public sealed class ConfiguracionSabatina : EntidadAuditable
     public void Validar()
     {
         var ordenados = Modulos.OrderBy(x => x.Orden).ToArray();
-        if (ordenados.Length != 3 || ordenados.Sum(x => x.Semanas) != 16)
+        if (ordenados.Length is < 2 or > 36)
         {
-            throw new InvalidOperationException("La configuración sabatina debe tener tres módulos que sumen 16 semanas.");
+            throw new InvalidOperationException(
+                "La configuración sabatina debe contener entre 2 y 36 módulos.");
         }
 
-        if (ordenados.Select(x => (int)x.Semanas).Order().SequenceEqual([5, 5, 6]) is false)
+        if (!ordenados.Select(x => (int)x.Orden)
+                .SequenceEqual(Enumerable.Range(1, ordenados.Length)))
         {
-            throw new InvalidOperationException("La distribución de módulos debe ser 5 + 5 + 6.");
+            throw new InvalidOperationException(
+                "Los módulos sabatinos deben tener un orden consecutivo.");
         }
 
-        if (ordenados.Any(x => x.Materias.Count != 2))
+        if (ordenados.Any(x => x.Semanas is < 1 or > SemanasEfectivas
+            || x.Materias.Count != 1))
         {
-            throw new InvalidOperationException("Cada módulo sabatino debe contener exactamente dos materias.");
+            throw new InvalidOperationException(
+                "Cada módulo sabatino debe contener una materia y durar entre 1 y 18 semanas.");
+        }
+
+        var materias = ordenados
+            .Select(x => x.Materias.Single())
+            .ToArray();
+        if (materias.Select(x => x.OfertaMateriaId).Distinct().Count()
+            != materias.Length)
+        {
+            throw new InvalidOperationException(
+                "Cada materia debe aparecer una sola vez en la configuración sabatina.");
+        }
+
+        foreach (var turno in Enum.GetValues<TurnoSabatino>())
+        {
+            var modulosTurno = ordenados
+                .Where(x => x.Materias.Single().Turno == turno)
+                .ToArray();
+            if (modulosTurno.Sum(x => x.Semanas) != SemanasEfectivas)
+            {
+                throw new InvalidOperationException(
+                    $"Los módulos del turno {NombreTurno(turno)} deben sumar exactamente 18 semanas.");
+            }
+
+            var fechaEsperada = FechaInicio;
+            foreach (var modulo in modulosTurno)
+            {
+                var fechaFinEsperada = fechaEsperada.AddDays((modulo.Semanas - 1) * 7);
+                if (modulo.FechaInicio != fechaEsperada
+                    || modulo.FechaFin != fechaFinEsperada)
+                {
+                    throw new InvalidOperationException(
+                        $"Los módulos del turno {NombreTurno(turno)} deben ser consecutivos y comenzar en el primer sábado.");
+                }
+
+                fechaEsperada = fechaFinEsperada.AddDays(7);
+            }
         }
 
         Validada = true;
     }
+
+    private static string NombreTurno(TurnoSabatino turno) =>
+        turno == TurnoSabatino.Matutino ? "matutino" : "vespertino";
 }
 
 public sealed class ModuloSabatino : EntidadAuditable

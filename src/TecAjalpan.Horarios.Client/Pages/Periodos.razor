@@ -132,7 +132,7 @@
             <ValidationMessage For="() => modelo.FechaFin" />
           </div>
           <div class="form-field">
-            <label for="semanas">Semanas</label>
+            <label for="semanas">Semanas de modalidad escolarizada</label>
             <InputNumber TValue="int"
                          id="semanas"
                          @bind-Value="modelo.Semanas"
@@ -142,6 +142,10 @@
             @if (!esAdministrador)
             {
               <small>Los periodos ordinarios tienen 16 semanas. Sólo el administrador puede cambiar esta duración.</small>
+            }
+            else
+            {
+              <small>La modalidad sabatina utiliza siempre 18 semanas efectivas y se configura en su oferta académica.</small>
             }
             <ValidationMessage For="() => modelo.Semanas" />
           </div>

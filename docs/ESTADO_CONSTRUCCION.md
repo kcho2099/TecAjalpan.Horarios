@@ -9,7 +9,7 @@ Fecha de corte: 23 de julio de 2026.
 - Modelo inicial con 27 entidades de negocio y seguridad.
 - Auditoría, borrado lógico y concurrencia optimista.
 - Restricciones estructurales mediante índices para docente, grupo y espacio.
-- Módulos sabatinos con validación 5 + 5 + 6.
+- Módulos sabatinos dinámicos con 18 semanas efectivas por turno y cantidad variable de materias.
 - Estados y transiciones protegidas del horario.
 - ASP.NET Core Identity, roles y alcance por carrera.
 - Autenticación por cookie segura y antifalsificación.

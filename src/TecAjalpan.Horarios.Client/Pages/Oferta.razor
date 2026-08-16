@@ -187,45 +187,49 @@ else
       <div class="modal-header">
         <div>
           <span class="eyebrow">@configuracionActual.CarreraClave · @grupoActual.Clave</span>
-          <h2 id="titulo-modulos">Módulos sabatinos 5 + 5 + 6</h2>
+          <h2 id="titulo-modulos">Módulos sabatinos · 18 semanas</h2>
         </div>
         <button class="icon-button" type="button" disabled="@Ocupado" @onclick="CerrarModales">×</button>
       </div>
       <p class="modal-help">
-        Cada materia ocupa cuatro horas por sábado. Puedes cambiar las parejas, el orden y
-        cuál módulo recibe la sexta semana.
+        Cada materia es un módulo independiente de cuatro horas por sábado. Distribuye todas
+        las materias entre ambos turnos; cada turno debe completar exactamente 18 semanas.
       </p>
       <div class="form-field">
         <label>Primer sábado de clases</label>
         <InputDate @bind-Value="modulosModelo.FechaInicio" />
       </div>
+      <div class="oferta-periodo-resumen">
+        <strong>08:00–12:00: @CoberturaTurno(1) de 18 semanas</strong>
+        <strong>12:00–16:00: @CoberturaTurno(2) de 18 semanas</strong>
+      </div>
       <div class="oferta-modulos-grid">
         @foreach (var modulo in modulosModelo.Modulos.OrderBy(x => x.Orden))
         {
-          <article class="oferta-modulo-card">
+          <article class="oferta-modulo-card" @key="modulo">
             <div class="panel-title">
               <div><span>Módulo</span><h3>@modulo.Orden</h3></div>
               <div class="form-field compact-field">
+                <label>Orden</label>
+                <InputNumber TValue="int" @bind-Value="modulo.Orden"
+                             min="1" max="@modulosModelo.Modulos.Count" />
+              </div>
+              <div class="form-field compact-field">
                 <label>Duración</label>
-                <InputSelect @bind-Value="modulo.Semanas">
-                  <option value="5">5 semanas</option>
-                  <option value="6">6 semanas</option>
-                </InputSelect>
+                <InputNumber TValue="int" @bind-Value="modulo.Semanas"
+                             min="1" max="18" />
               </div>
             </div>
             <div class="form-field full">
-              <label>08:00–12:00</label>
-              <InputSelect @bind-Value="modulo.MateriaMatutinaId">
-                <option value="@Guid.Empty">Selecciona una materia</option>
-                @foreach (var materia in grupoActual.Materias.OrderBy(x => x.Nombre))
-                {
-                  <option value="@materia.Id">@materia.Clave · @materia.Nombre</option>
-                }
+              <label>Turno</label>
+              <InputSelect @bind-Value="modulo.Turno">
+                <option value="1">08:00–12:00</option>
+                <option value="2">12:00–16:00</option>
               </InputSelect>
             </div>
             <div class="form-field full">
-              <label>12:00–16:00</label>
-              <InputSelect @bind-Value="modulo.MateriaVespertinaId">
+              <label>Materia</label>
+              <InputSelect @bind-Value="modulo.MateriaId">
                 <option value="@Guid.Empty">Selecciona una materia</option>
                 @foreach (var materia in grupoActual.Materias.OrderBy(x => x.Nombre))
                 {
@@ -438,7 +442,7 @@ else
 }
 
 @code {
-  private static readonly int[] SemanasModulosSabatinos = [5, 5, 6];
+  private const int SemanasSabatinas = 18;
 
   private OfertaCatalogosDto catalogos = new([], [], [], []);
   private List<PeriodoCarreraOfertaDto> configuraciones = [];
@@ -610,9 +614,9 @@ else
     configuracionActual = configuracion;
     grupoActual = grupo;
     errorFormulario = null;
-    if (grupo.Materias.Count != 6)
+    if (grupo.Materias.Count is < 2 or > 36)
     {
-      errorFormulario = "El grupo sabatino debe tener exactamente seis materias antes de configurar sus módulos.";
+      errorFormulario = "El grupo sabatino debe tener entre 2 y 36 materias para cubrir ambos turnos.";
       mostrarModulos = true;
       modulosModelo = new();
       return;
@@ -629,8 +633,8 @@ else
           {
             Orden = x.Orden,
             Semanas = x.Semanas,
-            MateriaMatutinaId = x.MateriaMatutinaId,
-            MateriaVespertinaId = x.MateriaVespertinaId
+            MateriaId = x.MateriaId,
+            Turno = x.Turno
           }).ToList()
       };
     }
@@ -643,13 +647,7 @@ else
       {
         FechaInicio = inicio,
         RowVersionGrupo = grupo.RowVersion,
-        Modulos = Enumerable.Range(0, 3).Select(i => new GuardarModuloSabatinoRequest
-        {
-          Orden = (byte)(i + 1),
-          Semanas = (byte)(i == 0 ? 6 : 5),
-          MateriaMatutinaId = materias[i * 2].Id,
-          MateriaVespertinaId = materias[i * 2 + 1].Id
-        }).ToList()
+        Modulos = CrearDistribucionInicial(materias)
       };
     }
     mostrarModulos = true;
@@ -658,18 +656,43 @@ else
   private async Task GuardarModulos()
   {
     if (grupoActual is null) return;
-    var materias = modulosModelo.Modulos
-      .SelectMany(x => new[] { x.MateriaMatutinaId, x.MateriaVespertinaId })
-      .ToArray();
-    if (materias.Any(x => x == Guid.Empty) || materias.Distinct().Count() != 6)
+    var modulos = modulosModelo.Modulos.OrderBy(x => x.Orden).ToArray();
+    if (modulos.Length != grupoActual.Materias.Count)
     {
-      errorFormulario = "Selecciona seis materias distintas: dos para cada módulo.";
+      errorFormulario = "Debe existir exactamente un módulo por cada materia activa del grupo.";
       return;
     }
-    if (!modulosModelo.Modulos.Select(x => (int)x.Semanas)
-      .Order().SequenceEqual(SemanasModulosSabatinos))
+
+    if (!modulos.Select(x => x.Orden)
+      .SequenceEqual(Enumerable.Range(1, modulos.Length)))
     {
-      errorFormulario = "La duración debe ser 5 + 5 + 6; sólo un módulo puede durar seis semanas.";
+      errorFormulario = "El orden de los módulos debe ser consecutivo y no puede repetirse.";
+      return;
+    }
+
+    var materias = modulos.Select(x => x.MateriaId).ToArray();
+    var materiasGrupo = grupoActual.Materias.Select(x => x.Id).ToHashSet();
+    if (materias.Any(x => x == Guid.Empty)
+      || materias.Distinct().Count() != materias.Length
+      || !materiasGrupo.SetEquals(materias))
+    {
+      errorFormulario = "Selecciona cada materia activa una sola vez en los módulos.";
+      return;
+    }
+
+    if (modulos.Any(x => x.Turno is < 1 or > 2
+      || x.Semanas is < 1 or > SemanasSabatinas))
+    {
+      errorFormulario = "Cada módulo debe tener un turno y durar entre 1 y 18 semanas.";
+      return;
+    }
+
+    var semanasMatutinas = modulos.Where(x => x.Turno == 1).Sum(x => x.Semanas);
+    var semanasVespertinas = modulos.Where(x => x.Turno == 2).Sum(x => x.Semanas);
+    if (semanasMatutinas != SemanasSabatinas
+      || semanasVespertinas != SemanasSabatinas)
+    {
+      errorFormulario = $"Cada turno debe sumar exactamente 18 semanas. Matutino: {semanasMatutinas}; vespertino: {semanasVespertinas}.";
       return;
     }
 
@@ -692,6 +715,51 @@ else
       errorFormulario = $"No fue posible guardar los módulos: {ex.Message}";
     }
     finally { guardando = false; }
+  }
+
+  private int CoberturaTurno(int turno) =>
+    modulosModelo.Modulos.Where(x => x.Turno == turno).Sum(x => x.Semanas);
+
+  private static List<GuardarModuloSabatinoRequest> CrearDistribucionInicial(
+    IReadOnlyList<MateriaOfertaDto> materias)
+  {
+    var cantidadMatutina = (materias.Count + 1) / 2;
+    var cantidadVespertina = materias.Count / 2;
+    var semanasMatutinas = DistribuirSemanas(cantidadMatutina);
+    var semanasVespertinas = DistribuirSemanas(cantidadVespertina);
+    var indiceMatutino = 0;
+    var indiceVespertino = 0;
+    var resultado = new List<GuardarModuloSabatinoRequest>(materias.Count);
+
+    for (var indice = 0; indice < materias.Count; indice++)
+    {
+      var esMatutino = indice % 2 == 0;
+      resultado.Add(new GuardarModuloSabatinoRequest
+      {
+        Orden = indice + 1,
+        MateriaId = materias[indice].Id,
+        Turno = esMatutino ? 1 : 2,
+        Semanas = esMatutino
+          ? semanasMatutinas[indiceMatutino++]
+          : semanasVespertinas[indiceVespertino++]
+      });
+    }
+
+    return resultado;
+  }
+
+  private static int[] DistribuirSemanas(int cantidadMaterias)
+  {
+    if (cantidadMaterias <= 0)
+    {
+      return [];
+    }
+
+    var semanasBase = SemanasSabatinas / cantidadMaterias;
+    var semanasAdicionales = SemanasSabatinas % cantidadMaterias;
+    return Enumerable.Range(0, cantidadMaterias)
+      .Select(indice => semanasBase + (indice < semanasAdicionales ? 1 : 0))
+      .ToArray();
   }
 
   private static DateOnly PrimerSabado(DateOnly fecha)

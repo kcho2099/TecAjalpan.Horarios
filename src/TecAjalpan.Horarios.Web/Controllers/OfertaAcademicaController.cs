@@ -17,9 +17,6 @@ public sealed class OfertaAcademicaController(
     ApplicationDbContext dbContext,
     IUsuarioActual usuarioActual) : ControllerBase
 {
-    private static readonly byte[] OrdenesModulosSabatinos = [1, 2, 3];
-    private static readonly int[] SemanasModulosSabatinos = [5, 5, 6];
-
     [HttpGet("catalogos")]
     public async Task<ActionResult<OfertaCatalogosDto>> Catalogos(
         CancellationToken cancellationToken)
@@ -413,23 +410,54 @@ public sealed class OfertaAcademicaController(
             return BadRequest(new { mensaje = "Los módulos sólo aplican a grupos de modalidad sabatina." });
 
         var modulos = request.Modulos.OrderBy(x => x.Orden).ToArray();
-        if (modulos.Length != 3
-            || !modulos.Select(x => x.Orden).SequenceEqual(OrdenesModulosSabatinos)
-            || !modulos.Select(x => (int)x.Semanas).Order().SequenceEqual(SemanasModulosSabatinos))
+        if (modulos.Length is < 2 or > 36
+            || !modulos.Select(x => x.Orden)
+                .SequenceEqual(Enumerable.Range(1, modulos.Length)))
         {
-            return BadRequest(new { mensaje = "Configura los módulos 1, 2 y 3 con una distribución de 5 + 5 + 6 semanas." });
+            return BadRequest(new
+            {
+                mensaje = "Configura entre 2 y 36 módulos y utiliza un orden consecutivo."
+            });
         }
 
-        var idsMaterias = modulos
-            .SelectMany(x => new[] { x.MateriaMatutinaId, x.MateriaVespertinaId })
-            .ToArray();
-        if (idsMaterias.Any(x => x == Guid.Empty) || idsMaterias.Distinct().Count() != 6)
-            return BadRequest(new { mensaje = "Selecciona seis materias distintas: dos para cada módulo." });
+        if (modulos.Any(x => x.MateriaId == Guid.Empty
+            || x.Semanas is < 1 or > ConfiguracionSabatina.SemanasEfectivas
+            || x.Turno is < 1 or > 2))
+        {
+            return BadRequest(new
+            {
+                mensaje = "Cada módulo debe tener materia, turno y una duración entre 1 y 18 semanas."
+            });
+        }
+
+        var idsMaterias = modulos.Select(x => x.MateriaId).ToArray();
+        if (idsMaterias.Distinct().Count() != idsMaterias.Length)
+            return BadRequest(new { mensaje = "Cada materia debe aparecer una sola vez en los módulos." });
         var ofertasActivas = grupo.Oferta.Where(x => x.Activa).ToArray();
-        if (ofertasActivas.Length != 6
+        if (ofertasActivas.Length != idsMaterias.Length
             || idsMaterias.Any(x => ofertasActivas.All(o => o.Id != x)))
         {
-            return BadRequest(new { mensaje = "El grupo sabatino debe tener exactamente seis materias activas y todas deben pertenecer a sus módulos." });
+            return BadRequest(new
+            {
+                mensaje = "Todas las materias activas del grupo deben aparecer exactamente una vez en los módulos."
+            });
+        }
+
+        foreach (var turno in Enum.GetValues<TurnoSabatino>())
+        {
+            var semanasTurno = modulos
+                .Where(x => x.Turno == (int)turno)
+                .Sum(x => x.Semanas);
+            if (semanasTurno != ConfiguracionSabatina.SemanasEfectivas)
+            {
+                var nombreTurno = turno == TurnoSabatino.Matutino
+                    ? "08:00–12:00"
+                    : "12:00–16:00";
+                return BadRequest(new
+                {
+                    mensaje = $"Los módulos del turno {nombreTurno} deben sumar exactamente 18 semanas; actualmente suman {semanasTurno}."
+                });
+            }
         }
 
         if (request.FechaInicio.DayOfWeek != DayOfWeek.Saturday)
@@ -438,9 +466,10 @@ public sealed class OfertaAcademicaController(
         var periodo = grupo.PeriodoCarrera.Periodo;
         if (primerSabado < periodo.FechaInicio)
             return BadRequest(new { mensaje = "El inicio de los módulos no puede ser anterior al periodo." });
-        var ultimoSabado = primerSabado.AddDays((16 - 1) * 7);
+        var ultimoSabado = primerSabado.AddDays(
+            (ConfiguracionSabatina.SemanasEfectivas - 1) * 7);
         if (ultimoSabado > periodo.FechaFin)
-            return BadRequest(new { mensaje = "Los 16 sábados de los módulos exceden la fecha final del periodo." });
+            return BadRequest(new { mensaje = "Los 18 sábados de los módulos exceden la fecha final del periodo." });
 
         var tieneCarga = await dbContext.CargasAcademicas.AnyAsync(x =>
             x.OfertaMateria.GrupoId == id, cancellationToken);
@@ -457,42 +486,35 @@ public sealed class OfertaAcademicaController(
         }
         else
         {
-            var materiasAnteriores = configuracion.Modulos
-                .SelectMany(x => x.Materias).ToArray();
-            await dbContext.ModulosMaterias
-                .Where(x => x.ModuloSabatino.ConfiguracionSabatinaId == configuracion.Id)
-                .ExecuteDeleteAsync(cancellationToken);
-            foreach (var materiaAnterior in materiasAnteriores)
-                dbContext.Entry(materiaAnterior).State = EntityState.Detached;
-            foreach (var moduloExistente in configuracion.Modulos)
-                moduloExistente.Materias.Clear();
+            dbContext.ModulosSabatinos.RemoveRange(configuracion.Modulos);
+            configuracion.Modulos.Clear();
         }
         configuracion.FechaInicio = primerSabado;
         configuracion.Validada = false;
-        var fechaModulo = primerSabado;
+        var siguienteFechaPorTurno = new Dictionary<TurnoSabatino, DateOnly>
+        {
+            [TurnoSabatino.Matutino] = primerSabado,
+            [TurnoSabatino.Vespertino] = primerSabado
+        };
         foreach (var moduloRequest in modulos)
         {
-            var modulo = configuracion.Modulos.SingleOrDefault(
-                x => x.Orden == moduloRequest.Orden);
-            if (modulo is null)
+            var turno = (TurnoSabatino)moduloRequest.Turno;
+            var fechaInicioModulo = siguienteFechaPorTurno[turno];
+            var semanas = checked((byte)moduloRequest.Semanas);
+            var modulo = new ModuloSabatino
             {
-                modulo = new ModuloSabatino { Orden = moduloRequest.Orden };
-                configuracion.Modulos.Add(modulo);
-            }
-            modulo.Semanas = moduloRequest.Semanas;
-            modulo.FechaInicio = fechaModulo;
-            modulo.FechaFin = fechaModulo.AddDays((moduloRequest.Semanas - 1) * 7);
+                Orden = checked((byte)moduloRequest.Orden),
+                Semanas = semanas,
+                FechaInicio = fechaInicioModulo,
+                FechaFin = fechaInicioModulo.AddDays((semanas - 1) * 7)
+            };
             modulo.Materias.Add(new ModuloMateria
             {
-                Turno = TurnoSabatino.Matutino,
-                OfertaMateriaId = moduloRequest.MateriaMatutinaId
+                Turno = turno,
+                OfertaMateriaId = moduloRequest.MateriaId
             });
-            modulo.Materias.Add(new ModuloMateria
-            {
-                Turno = TurnoSabatino.Vespertino,
-                OfertaMateriaId = moduloRequest.MateriaVespertinaId
-            });
-            fechaModulo = modulo.FechaFin.AddDays(7);
+            configuracion.Modulos.Add(modulo);
+            siguienteFechaPorTurno[turno] = modulo.FechaFin.AddDays(7);
         }
         configuracion.Validar();
         dbContext.Entry(grupo).Property(x => x.Nombre).IsModified = true;
@@ -634,12 +656,16 @@ public sealed class OfertaAcademicaController(
             : new ConfiguracionSabatinaOfertaDto(
                 x.ConfiguracionSabatina.Id,
                 x.ConfiguracionSabatina.FechaInicio,
+                ConfiguracionSabatina.SemanasEfectivas,
                 x.ConfiguracionSabatina.Validada,
                 x.ConfiguracionSabatina.Modulos.OrderBy(m => m.Orden)
-                    .Select(m => new ModuloSabatinoOfertaDto(
-                        m.Id, m.Orden, m.Semanas, m.FechaInicio, m.FechaFin,
-                        m.Materias.Single(mm => mm.Turno == TurnoSabatino.Matutino).OfertaMateriaId,
-                        m.Materias.Single(mm => mm.Turno == TurnoSabatino.Vespertino).OfertaMateriaId))
+                    .Select(m =>
+                    {
+                        var materia = m.Materias.Single();
+                        return new ModuloSabatinoOfertaDto(
+                            m.Id, m.Orden, m.Semanas, m.FechaInicio, m.FechaFin,
+                            materia.OfertaMateriaId, (byte)materia.Turno);
+                    })
                     .ToArray()),
         Convert.ToBase64String(x.RowVersion));
 
