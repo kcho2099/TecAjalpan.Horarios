@@ -133,7 +133,11 @@
           </div>
           <div class="form-field">
             <label for="semanas">Semanas</label>
-            <InputNumber id="semanas" @bind-Value="modelo.Semanas"
+            <InputNumber TValue="int"
+                         id="semanas"
+                         @bind-Value="modelo.Semanas"
+                         min="1"
+                         max="52"
                          disabled="@(!esAdministrador)" />
             @if (!esAdministrador)
             {
