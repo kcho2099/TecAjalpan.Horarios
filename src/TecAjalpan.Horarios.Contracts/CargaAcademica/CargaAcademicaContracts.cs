@@ -31,6 +31,7 @@ public sealed record CargaDocenteResumenDto(
     int HorasDisponiblesModalidad,
     int HorasEscolarizadas,
     IReadOnlyList<CargaDocenteModuloDto> CargaSabatinaModulos,
+    IReadOnlyList<CargaDocenteAsignacionSabatinaDto> AsignacionesSabatinas,
     bool DisponibleMatutinoSabatino,
     bool DisponibleVespertinoSabatino);
 
@@ -41,6 +42,17 @@ public sealed record CargaDocenteModuloDto(
     int HorasAsignadas,
     bool OcupaMatutino,
     bool OcupaVespertino);
+
+public sealed record CargaDocenteAsignacionSabatinaDto(
+    Guid OfertaMateriaId,
+    string CarreraNombre,
+    string GrupoClave,
+    string MateriaClave,
+    string MateriaNombre,
+    byte Modulo,
+    DateOnly FechaInicio,
+    DateOnly FechaFin,
+    byte Turno);
 
 public sealed record CargaGrupoDto(
     Guid Id,
