@@ -272,8 +272,8 @@ else
 
 @if (mostrarFormulario && materiaActual is not null && puedeEditar)
 {
-  <div class="modal-backdrop" @onclick="CerrarFormulario">
-    <section class="modal-card" role="dialog" aria-modal="true"
+  <div class="modal-backdrop carga-modal-backdrop" @onclick="CerrarFormulario">
+    <section class="modal-card carga-modal-card" role="dialog" aria-modal="true"
              aria-labelledby="titulo-carga" @onclick:stopPropagation>
       <div class="modal-header">
         <div>
