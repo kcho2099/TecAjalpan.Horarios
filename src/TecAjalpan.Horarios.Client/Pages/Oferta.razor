@@ -36,6 +36,17 @@
       }
     </InputSelect>
   </div>
+  <div class="form-field">
+    <label for="carrera-oferta">Carrera</label>
+    <InputSelect id="carrera-oferta" @bind-Value="carreraFiltroId"
+                 disabled="@(periodoId == Guid.Empty || Ocupado)">
+      <option value="@Guid.Empty">Todas las carreras</option>
+      @foreach (var carrera in catalogos.Carreras.OrderBy(x => x.Nombre))
+      {
+        <option value="@carrera.Id">@carrera.Clave · @carrera.Nombre</option>
+      }
+    </InputSelect>
+  </div>
   @if (PeriodoSeleccionado is not null)
   {
     <div class="oferta-periodo-resumen">
@@ -70,10 +81,19 @@ else if (configuraciones.Count == 0)
     <button class="btn-secondary" @onclick="NuevaConfiguracion">Habilitar carrera</button>
   </div>
 }
+else if (!ConfiguracionesFiltradas.Any())
+{
+  <div class="empty-state">
+    <div class="empty-icon">⌕</div>
+    <h2>La carrera no tiene oferta configurada</h2>
+    <p>No existen modalidades habilitadas para esta carrera en el periodo seleccionado.</p>
+    <button class="btn-secondary" @onclick="NuevaConfiguracion">Habilitar carrera</button>
+  </div>
+}
 else
 {
   <div class="oferta-carreras">
-    @foreach (var carrera in configuraciones
+    @foreach (var carrera in ConfiguracionesFiltradas
       .GroupBy(x => new { x.CarreraId, x.CarreraClave, x.CarreraNombre })
       .OrderBy(x => x.Key.CarreraNombre))
     {
@@ -449,6 +469,7 @@ else
   private List<MateriaDisponibleOfertaDto> materiasDisponibles = [];
   private HashSet<Guid> materiaIds = [];
   private Guid periodoId;
+  private Guid carreraFiltroId;
   private CrearPeriodoCarreraRequest configuracionModelo = new();
   private GuardarGrupoOfertaRequest grupoModelo = new();
   private GuardarConfiguracionSabatinaRequest modulosModelo = new();
@@ -470,6 +491,10 @@ else
 
   private OfertaPeriodoDto? PeriodoSeleccionado =>
     catalogos.Periodos.FirstOrDefault(x => x.Id == periodoId);
+  private IEnumerable<PeriodoCarreraOfertaDto> ConfiguracionesFiltradas =>
+    carreraFiltroId == Guid.Empty
+      ? configuraciones
+      : configuraciones.Where(x => x.CarreraId == carreraFiltroId);
   private bool MostrarConfirmacionEliminar =>
     mostrarConfirmacionEliminar && configuracionActual is not null;
   private bool Ocupado => cargando || cargandoMaterias || guardando || eliminando;
@@ -516,7 +541,11 @@ else
 
   private void NuevaConfiguracion()
   {
-    configuracionModelo = new CrearPeriodoCarreraRequest { PeriodoId = periodoId };
+    configuracionModelo = new CrearPeriodoCarreraRequest
+    {
+      PeriodoId = periodoId,
+      CarreraId = carreraFiltroId
+    };
     errorFormulario = null;
     mostrarConfiguracion = true;
   }
@@ -533,6 +562,7 @@ else
       { errorFormulario = resultado.Mensaje; return; }
       configuraciones.Add(resultado.Valor);
       configuraciones = configuraciones.OrderBy(x => x.CarreraNombre).ThenBy(x => x.ModalidadNombre).ToList();
+      carreraFiltroId = resultado.Valor.CarreraId;
       mensaje = "Carrera y modalidad habilitadas correctamente.";
       CerrarModalesForzado();
     }
