@@ -85,6 +85,7 @@ public sealed class CargaAcademicaController(
             .ToArray();
         var asignaciones = await dbContext.CargasAcademicas.AsNoTracking()
             .Where(x => !x.Eliminado
+                && x.Estado != EstadoCarga.Devuelta
                 && ofertasIds.Contains(x.OfertaMateriaId)
                 && !x.OfertaMateria.Eliminado
                 && x.OfertaMateria.Activa)
@@ -133,6 +134,7 @@ public sealed class CargaAcademicaController(
 
         var cargasDocentes = await dbContext.CargasAcademicas.AsNoTracking()
             .Where(x => !x.Eliminado
+                && x.Estado != EstadoCarga.Devuelta
                 && docentesCarreraIds.Contains(x.DocenteId)
                 && !x.OfertaMateria.Eliminado
                 && x.OfertaMateria.Activa
@@ -144,7 +146,11 @@ public sealed class CargaAcademicaController(
                 x.DocenteId,
                 x.OfertaMateriaId,
                 HorasRequeridas = (int)x.OfertaMateria.HorasRequeridas,
-                TipoModalidad = x.OfertaMateria.Grupo.PeriodoCarrera.Modalidad.Tipo
+                TipoModalidad = x.OfertaMateria.Grupo.PeriodoCarrera.Modalidad.Tipo,
+                CarreraNombre = x.OfertaMateria.Grupo.PeriodoCarrera.Carrera.Nombre,
+                GrupoClave = x.OfertaMateria.Grupo.Clave,
+                MateriaClave = x.OfertaMateria.Materia.Clave,
+                MateriaNombre = x.OfertaMateria.Materia.Nombre
             })
             .ToArrayAsync(cancellationToken);
 
@@ -179,6 +185,27 @@ public sealed class CargaAcademicaController(
                 var horasEscolarizadas = cargas
                     .Where(x => x.TipoModalidad == TipoModalidad.Escolarizada)
                     .Sum(x => x.HorasRequeridas);
+                var asignacionesSabatinas = cargas
+                    .Where(x => x.TipoModalidad == TipoModalidad.Sabatina
+                        && modulosOferta.ContainsKey(x.OfertaMateriaId))
+                    .Select(x =>
+                    {
+                        var modulo = modulosOferta[x.OfertaMateriaId];
+                        return new CargaDocenteAsignacionSabatinaDto(
+                            x.OfertaMateriaId,
+                            x.CarreraNombre,
+                            x.GrupoClave,
+                            x.MateriaClave,
+                            x.MateriaNombre,
+                            modulo.Modulo,
+                            modulo.FechaInicio,
+                            modulo.FechaFin,
+                            (byte)modulo.Turno);
+                    })
+                    .OrderBy(x => x.FechaInicio)
+                    .ThenBy(x => x.Turno)
+                    .ThenBy(x => x.MateriaClave)
+                    .ToArray();
                 var cargasSabatinas = cargas
                     .Where(x => x.TipoModalidad == TipoModalidad.Sabatina
                         && modulosOferta.ContainsKey(x.OfertaMateriaId))
@@ -220,6 +247,7 @@ public sealed class CargaAcademicaController(
                         configuracion.Modalidad.Tipo),
                     horasEscolarizadas,
                     cargasSabatinas,
+                    asignacionesSabatinas,
                     DisponibleEnTurnoSabatino(
                         docente.Tipo, disponibilidad, TurnoSabatino.Matutino),
                     DisponibleEnTurnoSabatino(
@@ -523,6 +551,7 @@ public sealed class CargaAcademicaController(
 
         var cargasAsignadas = await dbContext.CargasAcademicas.AsNoTracking()
             .Where(x => !x.Eliminado
+                && x.Estado != EstadoCarga.Devuelta
                 && x.DocenteId == docenteId
                 && x.OfertaMateriaId != oferta.Id
                 && !x.OfertaMateria.Eliminado
@@ -714,6 +743,7 @@ public sealed class CargaAcademicaController(
             .Include(x => x.Docente)
             .SingleOrDefaultAsync(
                 x => !x.Eliminado
+                    && x.Estado != EstadoCarga.Devuelta
                     && x.OfertaMateriaId == ofertaMateriaId,
                 cancellationToken);
         return MapearMateria(
