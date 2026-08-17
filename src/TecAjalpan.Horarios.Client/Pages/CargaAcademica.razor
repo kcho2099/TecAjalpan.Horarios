@@ -297,16 +297,26 @@ else
             <label>Docente titular</label>
             <InputSelect @bind-Value="modelo.DocenteId">
               <option value="@Guid.Empty">Selecciona un docente</option>
-              @foreach (var docente in DocentesElegibles)
+              @foreach (var docente in DocentesCarrera)
               {
-                <option value="@docente.DocenteId">@TextoCargaDocente(docente)</option>
+                var motivo = MotivoNoElegible(docente, materiaActual);
+                <option value="@docente.DocenteId" disabled="@(motivo is not null)">
+                  @TextoCargaDocente(docente)@(motivo is null ? string.Empty : $" · No disponible: {motivo}")
+                </option>
               }
             </InputSelect>
-            @if (!DocentesElegibles.Any())
+            @if (!DocentesCarrera.Any())
             {
               <small class="form-help">
-                No hay docentes de esta carrera con disponibilidad validada y horas suficientes
-                para atender esta materia en la modalidad seleccionada.
+                No hay docentes activos de esta carrera con disponibilidad validada
+                para la modalidad seleccionada.
+              </small>
+            }
+            else if (!DocentesElegibles.Any())
+            {
+              <small class="form-help">
+                Los docentes no elegibles se muestran deshabilitados con la causa exacta,
+                para distinguir una falta de disponibilidad de un cruce real.
               </small>
             }
             <small>
@@ -520,12 +530,17 @@ else
 
   private static bool PuedeAtenderMateria(
     CargaDocenteResumenDto docente,
+    CargaMateriaDto materia) =>
+    MotivoNoElegible(docente, materia) is null;
+
+  private static string? MotivoNoElegible(
+    CargaDocenteResumenDto docente,
     CargaMateriaDto materia)
   {
     if (materia.TurnoSabatino == 1 && !docente.DisponibleMatutinoSabatino)
-      return false;
+      return "su disponibilidad no cubre 08:00–12:00";
     if (materia.TurnoSabatino == 2 && !docente.DisponibleVespertinoSabatino)
-      return false;
+      return "su disponibilidad no cubre 12:00–16:00";
 
     var horasActuales = materia.Titular?.DocenteId == docente.DocenteId
       ? materia.HorasCargaSemanal
@@ -538,7 +553,7 @@ else
     if (horasActuales == 0
       && ((materia.TurnoSabatino == 1 && cargasCoincidentes.Any(x => x.OcupaMatutino))
         || (materia.TurnoSabatino == 2 && cargasCoincidentes.Any(x => x.OcupaVespertino))))
-      return false;
+      return "ya tiene una materia en la misma franja y semanas";
     var horasModulo = materia.ModuloSabatino.HasValue
       ? MaximoHorasEnIntervalo(
           cargasCoincidentes,
@@ -548,7 +563,7 @@ else
     var nuevaCargaModalidad = horasModulo - horasActuales + materia.HorasCargaSemanal;
     if (nuevaCargaModalidad > docente.HorasDisponiblesModalidad)
     {
-      return false;
+      return $"superaría sus {docente.HorasDisponiblesModalidad} h disponibles en la modalidad";
     }
 
     var nuevaCargaGlobal = materia.ModuloSabatino.HasValue
@@ -558,8 +573,13 @@ else
           materia.FechaFinModulo!.Value,
           horasActuales)
       : docente.HorasAsignadas - horasActuales + materia.HorasCargaSemanal;
-    return docente.TipoDocente != 1
-      || nuevaCargaGlobal <= docente.CargaMaximaSemanal;
+    if (docente.TipoDocente == 1
+      && nuevaCargaGlobal > docente.CargaMaximaSemanal)
+    {
+      return $"superaría su carga máxima de {docente.CargaMaximaSemanal} h frente a grupo";
+    }
+
+    return null;
   }
 
   private static int MaximoHorasEnIntervalo(
