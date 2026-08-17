@@ -479,44 +479,78 @@ public sealed class OfertaAcademicaController(
         await using var transaction = await dbContext.Database
             .BeginTransactionAsync(cancellationToken);
         var configuracion = grupo.ConfiguracionSabatina;
+        var configuracionNueva = configuracion is null;
         if (configuracion is null)
         {
             configuracion = new ConfiguracionSabatina { GrupoId = grupo.Id };
-            dbContext.ConfiguracionesSabatinas.Add(configuracion);
         }
         else
         {
-            dbContext.ModulosSabatinos.RemoveRange(configuracion.Modulos);
-            configuracion.Modulos.Clear();
+            // Los módulos existentes se actualizan en su lugar. Reemplazar el
+            // agregado hacía que EF interpretara los hijos nuevos, que ya traen
+            // Guid, como Modified y emitiera UPDATE con RowVersion en vez de INSERT.
+            var modulosExistentes = configuracion.Modulos
+                .OrderBy(x => x.Orden)
+                .ToArray();
+            if (modulosExistentes.Length != modulos.Length
+                || modulosExistentes.Any(x => x.Materias.Count != 1))
+            {
+                return Conflict(new
+                {
+                    mensaje = "La configuración guardada no coincide con las materias actuales. Recarga la oferta y vuelve a configurar los módulos."
+                });
+            }
         }
         configuracion.FechaInicio = primerSabado;
         configuracion.Validada = false;
+        var modulosGuardados = configuracion.Modulos
+            .OrderBy(x => x.Orden)
+            .ToArray();
         var siguienteFechaPorTurno = new Dictionary<TurnoSabatino, DateOnly>
         {
             [TurnoSabatino.Matutino] = primerSabado,
             [TurnoSabatino.Vespertino] = primerSabado
         };
-        foreach (var moduloRequest in modulos)
+        for (var indice = 0; indice < modulos.Length; indice++)
         {
+            var moduloRequest = modulos[indice];
             var turno = (TurnoSabatino)moduloRequest.Turno;
             var fechaInicioModulo = siguienteFechaPorTurno[turno];
             var semanas = checked((byte)moduloRequest.Semanas);
-            var modulo = new ModuloSabatino
+            var modulo = configuracionNueva
+                ? new ModuloSabatino()
+                : modulosGuardados[indice];
+            modulo.Orden = checked((byte)moduloRequest.Orden);
+            modulo.Semanas = semanas;
+            modulo.FechaInicio = fechaInicioModulo;
+            modulo.FechaFin = fechaInicioModulo.AddDays((semanas - 1) * 7);
+
+            if (configuracionNueva)
             {
-                Orden = checked((byte)moduloRequest.Orden),
-                Semanas = semanas,
-                FechaInicio = fechaInicioModulo,
-                FechaFin = fechaInicioModulo.AddDays((semanas - 1) * 7)
-            };
-            modulo.Materias.Add(new ModuloMateria
+                modulo.Materias.Add(new ModuloMateria
+                {
+                    Turno = turno,
+                    OfertaMateriaId = moduloRequest.MateriaId
+                });
+                configuracion.Modulos.Add(modulo);
+            }
+            else
             {
-                Turno = turno,
-                OfertaMateriaId = moduloRequest.MateriaId
-            });
-            configuracion.Modulos.Add(modulo);
+                var materiaModulo = modulo.Materias.Single();
+                materiaModulo.Turno = turno;
+                materiaModulo.OfertaMateriaId = moduloRequest.MateriaId;
+            }
+
             siguienteFechaPorTurno[turno] = modulo.FechaFin.AddDays(7);
         }
         configuracion.Validar();
+        if (configuracionNueva)
+        {
+            // Se agrega el agregado completo después de construir sus hijos.
+            // Así EF marca Configuración, Módulos y MódulosMaterias como Added
+            // y no intenta actualizar filas nuevas usando RowVersion vacío.
+            dbContext.ConfiguracionesSabatinas.Add(configuracion);
+        }
         dbContext.Entry(grupo).Property(x => x.Nombre).IsModified = true;
 
         try
