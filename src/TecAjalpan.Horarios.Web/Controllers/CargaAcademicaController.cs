@@ -84,11 +84,21 @@ public sealed class CargaAcademicaController(
             .Select(x => x.Id)
             .ToArray();
         var asignaciones = await dbContext.CargasAcademicas.AsNoTracking()
-            .Where(x => ofertasIds.Contains(x.OfertaMateriaId))
+            .Where(x => !x.Eliminado
+                && ofertasIds.Contains(x.OfertaMateriaId)
+                && !x.OfertaMateria.Eliminado
+                && x.OfertaMateria.Activa)
             .Include(x => x.Docente)
             .ToArrayAsync(cancellationToken);
         var modulosOferta = await dbContext.ModulosMaterias.AsNoTracking()
-            .Where(x => x.OfertaMateria.Grupo.PeriodoCarrera.PeriodoId == periodoId)
+            .Where(x => !x.Eliminado
+                && !x.ModuloSabatino.Eliminado
+                && !x.ModuloSabatino.ConfiguracionSabatina.Eliminado
+                && !x.OfertaMateria.Eliminado
+                && x.OfertaMateria.Activa
+                && !x.OfertaMateria.Grupo.Eliminado
+                && !x.OfertaMateria.Grupo.PeriodoCarrera.Eliminado
+                && x.OfertaMateria.Grupo.PeriodoCarrera.PeriodoId == periodoId)
             .Select(x => new ModuloCargaInfo(
                 x.OfertaMateriaId,
                 x.ModuloSabatino.Orden,
@@ -99,10 +109,13 @@ public sealed class CargaAcademicaController(
             .ToDictionaryAsync(x => x.OfertaMateriaId, cancellationToken);
 
         var docentesCarrera = await dbContext.DocentesCarreras.AsNoTracking()
-            .Where(x => x.CarreraId == carreraId
+            .Where(x => !x.Eliminado
+                && x.CarreraId == carreraId
+                && !x.Docente.Eliminado
                 && x.Docente.Activo
                 && dbContext.DisponibilidadesDocentes.Any(disponibilidad =>
-                    disponibilidad.DocenteId == x.DocenteId
+                    !disponibilidad.Eliminado
+                    && disponibilidad.DocenteId == x.DocenteId
                     && disponibilidad.PeriodoId == periodoId
                     && disponibilidad.Validada))
             .Select(x => new
@@ -119,8 +132,12 @@ public sealed class CargaAcademicaController(
             .ToArray();
 
         var cargasDocentes = await dbContext.CargasAcademicas.AsNoTracking()
-            .Where(x => docentesCarreraIds.Contains(x.DocenteId)
+            .Where(x => !x.Eliminado
+                && docentesCarreraIds.Contains(x.DocenteId)
+                && !x.OfertaMateria.Eliminado
                 && x.OfertaMateria.Activa
+                && !x.OfertaMateria.Grupo.Eliminado
+                && !x.OfertaMateria.Grupo.PeriodoCarrera.Eliminado
                 && x.OfertaMateria.Grupo.PeriodoCarrera.PeriodoId == periodoId)
             .Select(x => new
             {
@@ -135,7 +152,8 @@ public sealed class CargaAcademicaController(
             .AsNoTracking()
             .Include(x => x.Bloques)
             .Include(x => x.Jornadas)
-            .Where(x => docentesCarreraIds.Contains(x.DocenteId)
+            .Where(x => !x.Eliminado
+                && docentesCarreraIds.Contains(x.DocenteId)
                 && x.PeriodoId == periodoId
                 && x.Validada)
             .ToArrayAsync(cancellationToken);
@@ -358,6 +376,11 @@ public sealed class CargaAcademicaController(
             || !VersionCoincide(asignacion, request.RowVersion))
             return Conflicto();
 
+        // El registro deja de representar una asignación vigente. Conservamos
+        // también un estado coherente en el historial antes del borrado lógico.
+        asignacion.Estado = EstadoCarga.Devuelta;
+        asignacion.FechaAutorizacion = null;
+        asignacion.UsuarioAutoriza = null;
         dbContext.CargasAcademicas.Remove(asignacion);
         try
         {
@@ -447,10 +470,12 @@ public sealed class CargaAcademicaController(
         CancellationToken cancellationToken)
     {
         var docente = await dbContext.Docentes.AsNoTracking()
-            .Where(x => x.Id == docenteId
+            .Where(x => !x.Eliminado
+                && x.Id == docenteId
                 && x.Activo
                 && x.Carreras.Any(c =>
-                    c.CarreraId == oferta.Grupo.PeriodoCarrera.CarreraId))
+                    !c.Eliminado
+                    && c.CarreraId == oferta.Grupo.PeriodoCarrera.CarreraId))
             .Select(x => new
             {
                 x.Tipo,
@@ -464,7 +489,8 @@ public sealed class CargaAcademicaController(
             .AsNoTracking()
             .Include(x => x.Bloques)
             .Include(x => x.Jornadas)
-            .Where(x => x.DocenteId == docenteId
+            .Where(x => !x.Eliminado
+                && x.DocenteId == docenteId
                 && x.PeriodoId == oferta.Grupo.PeriodoCarrera.PeriodoId
                 && x.Validada)
             .SingleOrDefaultAsync(cancellationToken);
@@ -496,9 +522,13 @@ public sealed class CargaAcademicaController(
         }
 
         var cargasAsignadas = await dbContext.CargasAcademicas.AsNoTracking()
-            .Where(x => x.DocenteId == docenteId
+            .Where(x => !x.Eliminado
+                && x.DocenteId == docenteId
                 && x.OfertaMateriaId != oferta.Id
+                && !x.OfertaMateria.Eliminado
                 && x.OfertaMateria.Activa
+                && !x.OfertaMateria.Grupo.Eliminado
+                && !x.OfertaMateria.Grupo.PeriodoCarrera.Eliminado
                 && x.OfertaMateria.Grupo.PeriodoCarrera.PeriodoId
                     == oferta.Grupo.PeriodoCarrera.PeriodoId)
             .Select(x => new
@@ -513,7 +543,12 @@ public sealed class CargaAcademicaController(
             .Select(x => x.OfertaMateriaId)
             .ToArray();
         var modulosCargas = await dbContext.ModulosMaterias.AsNoTracking()
-            .Where(x => idsSabatinos.Contains(x.OfertaMateriaId))
+            .Where(x => !x.Eliminado
+                && !x.ModuloSabatino.Eliminado
+                && !x.ModuloSabatino.ConfiguracionSabatina.Eliminado
+                && !x.OfertaMateria.Eliminado
+                && x.OfertaMateria.Activa
+                && idsSabatinos.Contains(x.OfertaMateriaId))
             .Select(x => new ModuloCargaInfo(
                 x.OfertaMateriaId,
                 x.ModuloSabatino.Orden,
@@ -671,11 +706,15 @@ public sealed class CargaAcademicaController(
     {
         var oferta = await dbContext.OfertasMaterias.AsNoTracking()
             .Include(x => x.Materia)
-            .SingleAsync(x => x.Id == ofertaMateriaId, cancellationToken);
+            .SingleAsync(x => !x.Eliminado
+                && x.Id == ofertaMateriaId
+                && x.Activa,
+                cancellationToken);
         var asignacion = await dbContext.CargasAcademicas.AsNoTracking()
             .Include(x => x.Docente)
             .SingleOrDefaultAsync(
-                x => x.OfertaMateriaId == ofertaMateriaId,
+                x => !x.Eliminado
+                    && x.OfertaMateriaId == ofertaMateriaId,
                 cancellationToken);
         return MapearMateria(
             oferta,
@@ -687,7 +726,10 @@ public sealed class CargaAcademicaController(
         Guid ofertaMateriaId,
         CancellationToken cancellationToken) =>
         dbContext.ModulosMaterias.AsNoTracking()
-            .Where(x => x.OfertaMateriaId == ofertaMateriaId)
+            .Where(x => !x.Eliminado
+                && !x.ModuloSabatino.Eliminado
+                && !x.ModuloSabatino.ConfiguracionSabatina.Eliminado
+                && x.OfertaMateriaId == ofertaMateriaId)
             .Select(x => new ModuloCargaInfo(
                 x.OfertaMateriaId,
                 x.ModuloSabatino.Orden,
