@@ -295,16 +295,66 @@ else
         <div class="form-grid">
           <div class="form-field full">
             <label>Docente titular</label>
-            <InputSelect @bind-Value="modelo.DocenteId">
-              <option value="@Guid.Empty">Selecciona un docente</option>
-              @foreach (var docente in DocentesCarrera)
+            <div class="docente-selector">
+              <button class="docente-selector-trigger" type="button"
+                      disabled="@procesando" aria-haspopup="listbox"
+                      aria-expanded="@selectorDocentesAbierto"
+                      @onclick="AlternarSelectorDocentes">
+                <span>
+                  @(DocenteSeleccionado?.DocenteNombre ?? "Selecciona un docente")
+                </span>
+                <span class="docente-selector-chevron" aria-hidden="true">⌄</span>
+              </button>
+
+              @if (selectorDocentesAbierto)
               {
-                var motivo = MotivoNoElegible(docente, materiaActual);
-                <option value="@docente.DocenteId" disabled="@(motivo is not null)">
-                  @TextoCargaDocente(docente)@(motivo is null ? string.Empty : $" · No disponible: {motivo}")
-                </option>
+                <div class="docente-selector-menu" role="listbox"
+                     aria-label="Docentes titulares">
+                  @if (DocentesElegibles.Any())
+                  {
+                    <div class="docente-selector-section">
+                      <span>Disponibles</span>
+                      <small>@DocentesElegibles.Count()</small>
+                    </div>
+                    @foreach (var docente in DocentesElegibles)
+                    {
+                      <button class="docente-selector-option disponible" type="button"
+                              role="option"
+                              aria-selected="@(modelo.DocenteId == docente.DocenteId)"
+                              @onclick="() => SeleccionarDocente(docente)">
+                        <span class="docente-option-main">
+                          <strong>@docente.DocenteNombre</strong>
+                          <span class="docente-status disponible">Disponible</span>
+                        </span>
+                        <small>@TextoCargaDocenteCompacto(docente)</small>
+                      </button>
+                    }
+                  }
+
+                  @if (DocentesNoElegibles.Any())
+                  {
+                    <div class="docente-selector-section no-disponibles">
+                      <span>No disponibles para esta materia</span>
+                      <small>@DocentesNoElegibles.Count()</small>
+                    </div>
+                    @foreach (var docente in DocentesNoElegibles)
+                    {
+                      <div class="docente-selector-option bloqueado"
+                           role="option" aria-disabled="true">
+                        <span class="docente-option-main">
+                          <strong>@docente.DocenteNombre</strong>
+                          <span class="docente-status bloqueado">No disponible</span>
+                        </span>
+                        <small>@TextoCargaDocenteCompacto(docente)</small>
+                        <span class="docente-conflicto">
+                          @DetalleNoElegible(docente, materiaActual)
+                        </span>
+                      </div>
+                    }
+                  }
+                </div>
               }
-            </InputSelect>
+            </div>
             @if (!DocentesCarrera.Any())
             {
               <small class="form-help">
@@ -409,6 +459,7 @@ else
   private bool cargando = true;
   private bool procesando;
   private bool mostrarFormulario;
+  private bool selectorDocentesAbierto;
   private bool puedeEditar;
   private bool puedeAutorizar;
   private string? mensaje;
@@ -428,6 +479,12 @@ else
     materiaActual is null
       ? DocentesCarrera
       : DocentesCarrera.Where(x => PuedeAtenderMateria(x, materiaActual));
+  private IEnumerable<CargaDocenteResumenDto> DocentesNoElegibles =>
+    materiaActual is null
+      ? Enumerable.Empty<CargaDocenteResumenDto>()
+      : DocentesCarrera.Where(x => !PuedeAtenderMateria(x, materiaActual));
+  private CargaDocenteResumenDto? DocenteSeleccionado =>
+    DocentesCarrera.FirstOrDefault(x => x.DocenteId == modelo.DocenteId);
   private int TotalMaterias =>
     configuracion?.Grupos.Sum(x => x.Materias.Count) ?? 0;
   private int MateriasAsignadas =>
@@ -523,6 +580,11 @@ else
     return $"{docente.DocenteNombre} · {docente.HorasAsignadasModalidad} h asignadas en modalidad · {docente.HorasDisponiblesModalidad} bloques utilizables · {docente.HorasAsignadas} h frente a grupo totales";
   }
 
+  private static string TextoCargaDocenteCompacto(CargaDocenteResumenDto docente) =>
+    docente.TipoDocente == 2
+      ? $"{docente.HorasAsignadasModalidad} h en el módulo · {docente.HorasDisponiblesModalidad} bloques disponibles"
+      : $"{docente.HorasAsignadasModalidad} h en modalidad · {docente.HorasAsignadas} h frente a grupo totales";
+
   private static string TextoFechasModulo(CargaMateriaDto materia) =>
     materia.FechaInicioModulo.HasValue && materia.FechaFinModulo.HasValue
       ? $"{materia.FechaInicioModulo.Value:dd/MM/yyyy}–{materia.FechaFinModulo.Value:dd/MM/yyyy}"
@@ -550,9 +612,7 @@ else
           x.FechaInicio, x.FechaFin,
           materia.FechaInicioModulo.Value, materia.FechaFinModulo.Value)).ToArray()
       : [];
-    if (horasActuales == 0
-      && ((materia.TurnoSabatino == 1 && cargasCoincidentes.Any(x => x.OcupaMatutino))
-        || (materia.TurnoSabatino == 2 && cargasCoincidentes.Any(x => x.OcupaVespertino))))
+    if (horasActuales == 0 && BuscarConflictoSabatino(docente, materia) is not null)
       return "ya tiene una materia en la misma franja y semanas";
     var horasModulo = materia.ModuloSabatino.HasValue
       ? MaximoHorasEnIntervalo(
@@ -580,6 +640,37 @@ else
     }
 
     return null;
+  }
+
+  private static string DetalleNoElegible(
+    CargaDocenteResumenDto docente,
+    CargaMateriaDto materia)
+  {
+    var conflicto = BuscarConflictoSabatino(docente, materia);
+    if (conflicto is not null)
+    {
+      var horario = conflicto.Turno == 1 ? "08:00–12:00" : "12:00–16:00";
+      return $"Cruce con {conflicto.CarreraNombre} · {conflicto.MateriaClave} {conflicto.MateriaNombre} · Grupo {conflicto.GrupoClave} · Módulo {conflicto.Modulo} · {horario} · {conflicto.FechaInicio:dd/MM/yyyy}–{conflicto.FechaFin:dd/MM/yyyy}";
+    }
+
+    return MotivoNoElegible(docente, materia) ?? "No disponible para esta asignación";
+  }
+
+  private static CargaDocenteAsignacionSabatinaDto? BuscarConflictoSabatino(
+    CargaDocenteResumenDto docente,
+    CargaMateriaDto materia)
+  {
+    if (!materia.TurnoSabatino.HasValue
+      || !materia.FechaInicioModulo.HasValue
+      || !materia.FechaFinModulo.HasValue)
+      return null;
+
+    return docente.AsignacionesSabatinas.FirstOrDefault(x =>
+      x.OfertaMateriaId != materia.OfertaMateriaId
+      && x.Turno == materia.TurnoSabatino.Value
+      && SeTraslapan(
+        x.FechaInicio, x.FechaFin,
+        materia.FechaInicioModulo.Value, materia.FechaFinModulo.Value));
   }
 
   private static int MaximoHorasEnIntervalo(
@@ -633,7 +724,18 @@ else
       RowVersion = materia.Titular?.RowVersion
     };
     errorFormulario = null;
+    selectorDocentesAbierto = false;
     mostrarFormulario = true;
+  }
+
+  private void AlternarSelectorDocentes() =>
+    selectorDocentesAbierto = !selectorDocentesAbierto;
+
+  private void SeleccionarDocente(CargaDocenteResumenDto docente)
+  {
+    modelo.DocenteId = docente.DocenteId;
+    selectorDocentesAbierto = false;
+    errorFormulario = null;
   }
 
   private async Task Guardar()
@@ -658,6 +760,7 @@ else
       }
 
       mostrarFormulario = false;
+      selectorDocentesAbierto = false;
       materiaActual = null;
       await Cargar();
       mensaje = "Docente titular guardado correctamente.";
@@ -774,6 +877,7 @@ else
     if (procesando)
       return;
     mostrarFormulario = false;
+    selectorDocentesAbierto = false;
     materiaActual = null;
     errorFormulario = null;
   }
