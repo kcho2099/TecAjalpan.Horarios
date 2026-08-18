@@ -18,15 +18,36 @@ public sealed class HorariosController(
     ApplicationDbContext dbContext,
     IGeneradorHorarios generador) : ControllerBase
 {
+    [HttpGet("periodos")]
+    public async Task<ActionResult<IReadOnlyCollection<PeriodoGeneracionDto>>> Periodos(
+        CancellationToken cancellationToken)
+    {
+        var periodos = await dbContext.Periodos.AsNoTracking()
+            .Where(x => x.Estado != EstadoPeriodo.Cerrado)
+            .OrderByDescending(x => x.Estado == EstadoPeriodo.Activo)
+            .ThenByDescending(x => x.FechaInicio)
+            .Select(x => new PeriodoGeneracionDto(
+                x.Id,
+                x.Nombre,
+                (byte)x.Estado,
+                x.Estado == EstadoPeriodo.Activo ? "Activo" : "Configuración"))
+            .ToArrayAsync(cancellationToken);
+        return Ok(periodos);
+    }
+
     [HttpPost("generar")]
     public async Task<ActionResult<ResultadoGeneracionDto>> Generar(
         [FromBody] GenerarHorarioRequest request,
         CancellationToken cancellationToken)
     {
-        var periodoExiste = await dbContext.Periodos.AsNoTracking()
-            .AnyAsync(x => x.Id == request.PeriodoId, cancellationToken);
-        if (!periodoExiste)
+        var estadoPeriodo = await dbContext.Periodos.AsNoTracking()
+            .Where(x => x.Id == request.PeriodoId)
+            .Select(x => (EstadoPeriodo?)x.Estado)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (!estadoPeriodo.HasValue)
             return NotFound("No se encontró el periodo solicitado.");
+        if (estadoPeriodo == EstadoPeriodo.Cerrado)
+            return Conflict("No se puede generar una nueva versión para un periodo cerrado.");
 
         var solicitud = new SolicitudGeneracion(
             request.PeriodoId,
