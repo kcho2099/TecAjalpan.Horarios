@@ -10,7 +10,18 @@ public interface IFuenteDatosGeneracion
 public sealed record DatosGeneracion(
     Guid PeriodoId,
     IReadOnlyCollection<UnidadGenerable> Unidades,
-    byte MaximoConsecutivasMateria = 2);
+    byte MaximoConsecutivasMateria = 2,
+    IReadOnlyCollection<SesionFijaGeneracion>? SesionesFijas = null);
+
+public sealed record SesionFijaGeneracion(
+    SesionPropuesta Sesion,
+    string Materia,
+    string Docente,
+    string Grupo,
+    string Espacio);
+
+public sealed class DatosGeneracionInvalidosException(string message)
+    : InvalidOperationException(message);
 
 public sealed record UnidadGenerable(
     Guid CargaAcademicaId,
