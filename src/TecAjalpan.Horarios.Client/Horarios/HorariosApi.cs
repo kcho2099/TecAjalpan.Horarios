@@ -6,6 +6,12 @@ namespace TecAjalpan.Horarios.Client.Horarios;
 
 public sealed class HorariosApi(HttpClient httpClient)
 {
+    public async Task<IReadOnlyCollection<PeriodoGeneracionDto>> ListarPeriodosAsync(
+        CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<PeriodoGeneracionDto[]>(
+            "api/horarios/periodos",
+            cancellationToken) ?? [];
+
     public async Task<ResultadoPeticionGeneracion> GenerarAsync(
         GenerarHorarioRequest request,
         CancellationToken cancellationToken = default)
