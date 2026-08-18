@@ -54,6 +54,7 @@ public sealed record SesionPropuesta(
     Guid DocenteId,
     Guid GrupoId,
     Guid EspacioId,
+    DateOnly Fecha,
     byte Dia,
     byte Bloque);
 
