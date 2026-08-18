@@ -102,7 +102,7 @@ internal sealed class FuenteDatosGeneracion(
     }
 
     private static void AgregarEscolarizado(
-        ICollection<UnidadGenerable> unidades,
+        List<UnidadGenerable> unidades,
         CargaAcademica carga,
         DisponibilidadDocente? disponibilidad,
         IReadOnlyCollection<Espacio> espacios,
@@ -111,7 +111,7 @@ internal sealed class FuenteDatosGeneracion(
         ConfiguracionSistema configuracion)
     {
         var opciones = new List<OpcionGeneracion>();
-        var duracionMinutos = Math.Max(1, configuracion.DuracionBloqueMinutos);
+        var duracionMinutos = Math.Max(1, (int)configuracion.DuracionBloqueMinutos);
         var totalBloques = Math.Max(0,
             (configuracion.FinEscolarizado - configuracion.InicioEscolarizado) * 60
             / duracionMinutos);
@@ -125,7 +125,7 @@ internal sealed class FuenteDatosGeneracion(
                     continue;
 
                 foreach (var espacio in espacios.Where(x =>
-                             EspacioDisponible(disponibilidadesEspacios, espacio.Id, dia, bloque)))
+                             EspacioDisponible(disponibilidadesEspacios, x.Id, dia, bloque)))
                 {
                     opciones.Add(new OpcionGeneracion(
                         espacio.Id,
@@ -149,7 +149,7 @@ internal sealed class FuenteDatosGeneracion(
     }
 
     private static void AgregarSabatino(
-        ICollection<UnidadGenerable> unidades,
+        List<UnidadGenerable> unidades,
         CargaAcademica carga,
         DisponibilidadDocente? disponibilidad,
         IReadOnlyCollection<Espacio> espacios,
@@ -158,7 +158,7 @@ internal sealed class FuenteDatosGeneracion(
     {
         var turno = moduloMateria?.Turno ?? TurnoSabatino.Matutino;
         var inicioBloque = turno == TurnoSabatino.Matutino ? 1 : 5;
-        IReadOnlyCollection<DateOnly> fechas = moduloMateria is null
+        List<DateOnly> fechas = moduloMateria is null
             ? []
             : FechasSabatinas(
                 moduloMateria.ModuloSabatino.FechaInicio,
@@ -167,7 +167,7 @@ internal sealed class FuenteDatosGeneracion(
         for (byte posicion = 0; posicion < 4; posicion++)
         {
             var bloque = checked((byte)(inicioBloque + posicion));
-            IReadOnlyCollection<OpcionGeneracion> opciones = moduloMateria is null
+            OpcionGeneracion[] opciones = moduloMateria is null
                 || fechas.Count == 0
                 || !DocenteDisponibleSabatino(disponibilidad, bloque)
                     ? []
@@ -262,7 +262,7 @@ internal sealed class FuenteDatosGeneracion(
         return configurada?.Disponible ?? true;
     }
 
-    private static IReadOnlyCollection<DateOnly> FechasDelDia(
+    private static List<DateOnly> FechasDelDia(
         DateOnly inicio,
         DateOnly fin,
         DiaAcademico dia)
@@ -277,7 +277,7 @@ internal sealed class FuenteDatosGeneracion(
         return resultado;
     }
 
-    private static IReadOnlyCollection<DateOnly> FechasSabatinas(
+    private static List<DateOnly> FechasSabatinas(
         DateOnly inicio,
         DateOnly fin)
     {
