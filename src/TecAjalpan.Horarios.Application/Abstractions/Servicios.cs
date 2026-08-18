@@ -56,7 +56,8 @@ public sealed record SesionPropuesta(
     Guid EspacioId,
     DateOnly Fecha,
     byte Dia,
-    byte Bloque);
+    byte Bloque,
+    bool EsFija = false);
 
 public sealed record PendientePropuesto(
     Guid CargaAcademicaId,
