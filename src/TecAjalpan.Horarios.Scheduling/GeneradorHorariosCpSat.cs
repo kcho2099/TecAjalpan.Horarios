@@ -33,6 +33,10 @@ public sealed class GeneradorHorariosCpSat(
         }
 
         AgregarRestriccionesDeCruce(modelo, decisiones);
+        AgregarMaximoConsecutivasMateria(
+            modelo,
+            decisiones,
+            datos.MaximoConsecutivasMateria);
         AgregarContinuidadDeEspacio(modelo, datos.Unidades, decisiones);
 
         if (decisiones.Count > 0)
@@ -172,6 +176,37 @@ public sealed class GeneradorHorariosCpSat(
                         modelo.Add(referencia == 0);
                     else if (actual is not null)
                         modelo.Add(actual == 0);
+                }
+            }
+        }
+    }
+
+    private static void AgregarMaximoConsecutivasMateria(
+        CpModel modelo,
+        IReadOnlyCollection<Decision> decisiones,
+        byte maximoConfigurado)
+    {
+        var maximo = Math.Max(1, (int)maximoConfigurado);
+        foreach (var carga in decisiones
+                     .Where(x => !x.Unidad.EsSabatina)
+                     .GroupBy(x => x.Unidad.CargaAcademicaId))
+        {
+            foreach (var dia in carga.Select(x => x.Opcion.Dia).Distinct())
+            {
+                var ultimoBloque = carga
+                    .Where(x => x.Opcion.Dia == dia)
+                    .Max(x => (int?)x.Opcion.Bloque) ?? 0;
+                for (var inicio = 1; inicio + maximo <= ultimoBloque; inicio++)
+                {
+                    var fin = inicio + maximo;
+                    var variables = carga
+                        .Where(x => x.Opcion.Dia == dia
+                            && x.Opcion.Bloque >= inicio
+                            && x.Opcion.Bloque <= fin)
+                        .Select(x => x.Variable)
+                        .ToArray();
+                    if (variables.Length > maximo)
+                        modelo.Add(LinearExpr.Sum(variables) <= maximo);
                 }
             }
         }
