@@ -95,11 +95,14 @@
       </div>
 
       <div class="generador-acciones">
-        <a class="btn-primary" href="@($"/horario/{HorarioVersionId}")">Ver horario generado</a>
         @if (versionActual is not null)
         {
-          <small>Guardado @versionActual.FechaCreacion.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @versionActual.EstadoTexto</small>
+          <div class="generador-guardado">
+            <strong>Propuesta lista para revisión</strong>
+            <small>Guardada @versionActual.FechaCreacion.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @versionActual.EstadoTexto</small>
+          </div>
         }
+        <a class="btn-primary" href="@($"/horario/{HorarioVersionId}")">Ver horario generado</a>
       </div>
 
       @if (resultado is not null && resultado.Pendientes.Count > 0)
