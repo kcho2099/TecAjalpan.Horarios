@@ -49,6 +49,12 @@ public sealed class HorarioVersion : EntidadAuditable
         Estado = EstadoHorario.Reemplazado;
     }
 
+    public void Descartar()
+    {
+        ExigirEstado(EstadoHorario.Borrador);
+        Estado = EstadoHorario.Descartado;
+    }
+
     private void ExigirEstado(EstadoHorario esperado)
     {
         if (Estado != esperado)
