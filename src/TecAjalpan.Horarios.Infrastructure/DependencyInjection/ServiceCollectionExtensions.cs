@@ -93,6 +93,7 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IPeriodoRepository, PeriodoRepository>();
         services.AddScoped<IHorarioRepository, HorarioRepository>();
+        services.AddScoped<IFuenteDatosGeneracion, FuenteDatosGeneracion>();
         return services;
     }
 }
