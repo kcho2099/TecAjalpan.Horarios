@@ -60,6 +60,7 @@ public sealed record HorarioSesionResumenDto(
     string Grupo,
     string MateriaClave,
     string Materia,
+    Guid DocenteId,
     string Docente,
     string Espacio,
     byte Dia,
