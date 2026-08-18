@@ -2479,6 +2479,105 @@ main {
   color: var(--gris);
 }
 
+.generador-acciones {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.generador-acciones .btn-primary {
+  text-decoration: none;
+}
+
+.generador-acciones small {
+  color: var(--gris);
+}
+
+.generador-versiones {
+  display: grid;
+  gap: 8px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--borde);
+}
+
+.generador-versiones h3 {
+  margin: 0 0 4px;
+}
+
+.generador-versiones a {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  color: inherit;
+  background: #faf9f8;
+  text-decoration: none;
+}
+
+.generador-versiones a:hover {
+  background: #f6eded;
+}
+
+.generador-versiones small {
+  color: var(--gris);
+  white-space: nowrap;
+}
+
+.horario-heading {
+  align-items: center;
+}
+
+.horario-toolbar {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(170px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.horario-resumen {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.horario-resumen div {
+  padding: 16px;
+  border: 1px solid var(--borde);
+  border-radius: 12px;
+  background: white;
+}
+
+.horario-resumen span,
+.horario-resumen strong {
+  display: block;
+}
+
+.horario-resumen span {
+  color: var(--gris);
+  font-size: 12px;
+}
+
+.horario-resumen strong {
+  margin-top: 5px;
+}
+
+.horario-tabla .panel-title {
+  padding: 0 0 16px;
+}
+
+.horario-tabla .data-table td {
+  min-width: 130px;
+}
+
+.horario-tabla .data-table td:first-child,
+.horario-tabla .data-table td:nth-child(3) {
+  min-width: 210px;
+}
+
 @media (max-width: 980px) {
   .generador-grid {
     grid-template-columns: 1fr;
@@ -2486,5 +2585,23 @@ main {
 
   .generador-metricas {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .horario-toolbar,
+  .horario-resumen {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .horario-toolbar,
+  .horario-resumen {
+    grid-template-columns: 1fr;
+  }
+
+  .generador-acciones,
+  .generador-versiones a {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
