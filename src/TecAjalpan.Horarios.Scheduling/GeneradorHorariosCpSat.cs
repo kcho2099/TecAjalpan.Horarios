@@ -38,10 +38,15 @@ public sealed class GeneradorHorariosCpSat(
         if (decisiones.Count > 0)
         {
             var pesoProgramacion = datos.Unidades.Count + 1L;
-            modelo.Maximize(LinearExpr.WeightedSum(
-                decisiones.Select(x => (IntVar)x.Variable),
-                decisiones.Select(x =>
-                    pesoProgramacion + (x.Opcion.Preferente ? 1L : 0L))));
+            var objetivo = LinearExpr.NewBuilder();
+            foreach (var decision in decisiones)
+            {
+                objetivo.AddTerm(
+                    decision.Variable,
+                    pesoProgramacion + (decision.Opcion.Preferente ? 1L : 0L));
+            }
+
+            modelo.Maximize(objetivo);
         }
 
         var solver = new CpSolver
