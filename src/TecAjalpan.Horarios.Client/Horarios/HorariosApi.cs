@@ -12,6 +12,20 @@ public sealed class HorariosApi(HttpClient httpClient)
             "api/horarios/periodos",
             cancellationToken) ?? [];
 
+    public async Task<IReadOnlyCollection<HorarioVersionResumenDto>> ListarVersionesAsync(
+        Guid periodoId,
+        CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<HorarioVersionResumenDto[]>(
+            $"api/horarios/periodos/{periodoId}/versiones",
+            cancellationToken) ?? [];
+
+    public Task<HorarioDetalleDto?> ObtenerVersionAsync(
+        Guid versionId,
+        CancellationToken cancellationToken = default) =>
+        httpClient.GetFromJsonAsync<HorarioDetalleDto>(
+            $"api/horarios/versiones/{versionId}",
+            cancellationToken);
+
     public async Task<ResultadoPeticionGeneracion> GenerarAsync(
         GenerarHorarioRequest request,
         CancellationToken cancellationToken = default)
