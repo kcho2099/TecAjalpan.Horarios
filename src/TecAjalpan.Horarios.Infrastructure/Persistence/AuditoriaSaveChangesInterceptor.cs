@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using TecAjalpan.Horarios.Application.Abstractions;
 using TecAjalpan.Horarios.Domain.Common;
 using TecAjalpan.Horarios.Domain.Entities;
+using TecAjalpan.Horarios.Domain.Enums;
 using TecAjalpan.Horarios.Infrastructure.Identity;
 
 namespace TecAjalpan.Horarios.Infrastructure.Persistence;
@@ -147,6 +148,13 @@ internal sealed class AuditoriaSaveChangesInterceptor(
 
     private static string ObtenerAccion(CambioPendiente cambio)
     {
+        if (cambio.Entry.Entity is HorarioVersion { Estado: EstadoHorario.Descartado }
+            && cambio.EstadoOriginal == EntityState.Modified
+            && PropiedadCambio(cambio.Entry, nameof(HorarioVersion.Estado)))
+        {
+            return "DescarteHorario";
+        }
+
         if (cambio.Entry.Entity is UsuarioCarrera or DocenteCarrera)
         {
             if (cambio.Entry.Entity is DocenteCarrera
