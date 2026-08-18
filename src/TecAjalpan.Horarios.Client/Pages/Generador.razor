@@ -102,7 +102,16 @@
             <small>Guardada @versionActual.FechaCreacion.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @versionActual.EstadoTexto</small>
           </div>
         }
-        <a class="btn-primary" href="@($"/horario/{HorarioVersionId}")">Ver horario generado</a>
+        <div class="generador-botones-resultado">
+          @if (versionActual?.Estado == 1)
+          {
+            <button class="btn-descartar" type="button" disabled="@descartando"
+                    @onclick="ConfirmarDescarte">
+              Descartar versión
+            </button>
+          }
+          <a class="btn-primary" href="@($"/horario/{HorarioVersionId}")">Ver horario generado</a>
+        </div>
       </div>
 
       @if (resultado is not null && resultado.Pendientes.Count > 0)
@@ -138,12 +147,44 @@
   </article>
 </div>
 
+@if (mostrarConfirmacionDescartar && versionActual is not null)
+{
+  <div class="modal-backdrop" @onclick="CerrarConfirmacionDescarte">
+    <section class="modal-card confirm-card" role="alertdialog" aria-modal="true"
+             aria-labelledby="titulo-descartar-horario" @onclick:stopPropagation>
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">Confirmar descarte</span>
+          <h2 id="titulo-descartar-horario">Descartar versión @versionActual.Numero</h2>
+        </div>
+        <button class="icon-button" type="button" disabled="@descartando"
+                @onclick="CerrarConfirmacionDescarte">×</button>
+      </div>
+      <p>Esta propuesta dejará de aparecer como horario activo y no podrá aprobarse ni publicarse.</p>
+      <p class="modal-help">La versión se conservará en la auditoría y su número no se reutilizará.</p>
+      @if (!string.IsNullOrWhiteSpace(error))
+      {
+        <div class="alerta-error">@error</div>
+      }
+      <div class="modal-actions">
+        <button class="btn-ghost" type="button" disabled="@descartando"
+                @onclick="CerrarConfirmacionDescarte">Cancelar</button>
+        <button class="btn-danger" type="button" disabled="@descartando" @onclick="DescartarVersion">
+          @(descartando ? "Descartando…" : "Sí, descartar versión")
+        </button>
+      </div>
+    </section>
+  </div>
+}
+
 @code {
   private List<PeriodoGeneracionDto> periodos = [];
   private Guid periodoId;
   private int tiempoLimiteSegundos = 60;
   private bool cargando = true;
   private bool generando;
+  private bool descartando;
+  private bool mostrarConfirmacionDescartar;
   private string? error;
   private string? mensaje;
   private ResultadoGeneracionDto? resultado;
@@ -229,6 +270,47 @@
     finally
     {
       generando = false;
+    }
+  }
+
+  private void ConfirmarDescarte() => mostrarConfirmacionDescartar = true;
+
+  private void CerrarConfirmacionDescarte()
+  {
+    if (!descartando)
+      mostrarConfirmacionDescartar = false;
+  }
+
+  private async Task DescartarVersion()
+  {
+    if (versionActual is null || descartando)
+      return;
+
+    var numero = versionActual.Numero;
+    descartando = true;
+    error = null;
+    mensaje = null;
+    try
+    {
+      var respuesta = await HorariosApi.DescartarAsync(versionActual.Id);
+      if (!respuesta.Correcto)
+      {
+        error = respuesta.Mensaje ?? "No fue posible descartar la versión.";
+        return;
+      }
+
+      resultado = null;
+      mostrarConfirmacionDescartar = false;
+      await CargarVersiones();
+      mensaje = $"La versión {numero} fue descartada y permanece disponible en la auditoría.";
+    }
+    catch (Exception ex)
+    {
+      error = ex.Message;
+    }
+    finally
+    {
+      descartando = false;
     }
   }
 }
