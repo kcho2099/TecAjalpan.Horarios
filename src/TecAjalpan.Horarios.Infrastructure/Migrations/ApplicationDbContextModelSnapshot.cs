@@ -652,6 +652,9 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                     b.Property<Guid>("EspacioId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateOnly>("Fecha")
+                        .HasColumnType("date");
+
                     b.Property<DateTime>("FechaCrea")
                         .HasColumnType("datetime2");
 
@@ -1960,13 +1963,13 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
 
                     b.HasIndex("EspacioId");
 
-                    b.HasIndex("HorarioVersionId", "Dia", "Bloque", "DocenteId")
+                    b.HasIndex("HorarioVersionId", "Fecha", "Bloque", "DocenteId")
                         .IsUnique();
 
-                    b.HasIndex("HorarioVersionId", "Dia", "Bloque", "EspacioId")
+                    b.HasIndex("HorarioVersionId", "Fecha", "Bloque", "EspacioId")
                         .IsUnique();
 
-                    b.HasIndex("HorarioVersionId", "Dia", "Bloque", "GrupoId")
+                    b.HasIndex("HorarioVersionId", "Fecha", "Bloque", "GrupoId")
                         .IsUnique();
 
                     b.ToTable("SesionesHorario", "Horarios");
