@@ -25,9 +25,12 @@ internal sealed class FuenteDatosGeneracion(
                 && !x.OfertaMateria.Grupo.PeriodoCarrera.Eliminado
                 && x.OfertaMateria.Grupo.PeriodoCarrera.PeriodoId == solicitud.PeriodoId)
             .Include(x => x.OfertaMateria)
+                .ThenInclude(x => x.Materia)
+            .Include(x => x.OfertaMateria)
                 .ThenInclude(x => x.Grupo)
                     .ThenInclude(x => x.PeriodoCarrera)
                         .ThenInclude(x => x.Modalidad)
+            .Include(x => x.Docente)
             .ToArrayAsync(cancellationToken);
 
         var docentesIds = cargas.Select(x => x.DocenteId).Distinct().ToArray();
@@ -62,6 +65,7 @@ internal sealed class FuenteDatosGeneracion(
             .FirstOrDefaultAsync(cancellationToken) ?? new ConfiguracionSistema();
 
         var unidades = new List<UnidadGenerable>();
+        var sesionesFijas = new List<SesionFijaGeneracion>();
         foreach (var carga in cargas)
         {
             disponibilidades.TryGetValue(carga.DocenteId, out var disponibilidad);
@@ -71,8 +75,8 @@ internal sealed class FuenteDatosGeneracion(
 
             if (grupo.PeriodoCarrera.Modalidad.Tipo == TipoModalidad.Sabatina)
             {
-                AgregarSabatino(
-                    unidades, carga, disponibilidad, espaciosCarga,
+                AgregarSabatinoFijo(
+                    sesionesFijas, carga, disponibilidad, espaciosCarga,
                     disponibilidadesEspacios, modulos.GetValueOrDefault(carga.OfertaMateriaId));
             }
             else
@@ -86,7 +90,8 @@ internal sealed class FuenteDatosGeneracion(
         return new DatosGeneracion(
             periodo.Id,
             unidades,
-            configuracion.MaximoConsecutivasMateria);
+            configuracion.MaximoConsecutivasMateria,
+            sesionesFijas);
     }
 
     private static Espacio[] EspaciosPermitidos(
@@ -151,51 +156,80 @@ internal sealed class FuenteDatosGeneracion(
         }
     }
 
-    private static void AgregarSabatino(
-        List<UnidadGenerable> unidades,
+    private static void AgregarSabatinoFijo(
+        List<SesionFijaGeneracion> sesiones,
         CargaAcademica carga,
         DisponibilidadDocente? disponibilidad,
         IReadOnlyCollection<Espacio> espacios,
         IReadOnlyCollection<DisponibilidadEspacio> disponibilidadesEspacios,
         ModuloMateria? moduloMateria)
     {
-        var turno = moduloMateria?.Turno ?? TurnoSabatino.Matutino;
+        var grupo = carga.OfertaMateria.Grupo;
+        var materia = carga.OfertaMateria.Materia;
+        var docente = carga.Docente;
+        if (moduloMateria is null)
+        {
+            throw new DatosGeneracionInvalidosException(
+                $"La materia sabatina {materia.Clave} · {materia.Nombre} del grupo "
+                + $"{grupo.Clave} no tiene un módulo configurado.");
+        }
+        if (!grupo.EspacioBaseId.HasValue)
+        {
+            throw new DatosGeneracionInvalidosException(
+                $"El grupo sabatino {grupo.Clave} no tiene un aula base asignada.");
+        }
+
+        var espacio = espacios.SingleOrDefault(x => x.Id == grupo.EspacioBaseId.Value)
+            ?? throw new DatosGeneracionInvalidosException(
+                $"El aula base del grupo sabatino {grupo.Clave} no está activa o no está permitida para su carrera.");
+        var turno = moduloMateria.Turno;
         var inicioBloque = turno == TurnoSabatino.Matutino ? 1 : 5;
-        List<DateOnly> fechas = moduloMateria is null
-            ? []
-            : FechasSabatinas(
-                moduloMateria.ModuloSabatino.FechaInicio,
-                moduloMateria.ModuloSabatino.FechaFin);
+        var fechas = FechasSabatinas(
+            moduloMateria.ModuloSabatino.FechaInicio,
+            moduloMateria.ModuloSabatino.FechaFin);
+        if (fechas.Count == 0)
+        {
+            throw new DatosGeneracionInvalidosException(
+                $"El módulo sabatino de {materia.Clave} · {materia.Nombre} no contiene sábados efectivos.");
+        }
 
         for (byte posicion = 0; posicion < 4; posicion++)
         {
             var bloque = checked((byte)(inicioBloque + posicion));
-            OpcionGeneracion[] opciones = moduloMateria is null
-                || fechas.Count == 0
-                || !DocenteDisponibleSabatino(disponibilidad, bloque)
-                    ? []
-                    : espacios
-                        .Where(x => EspacioDisponible(
-                            disponibilidadesEspacios,
-                            x.Id,
-                            DiaAcademico.Sabado,
-                            bloque))
-                        .Select(x => new OpcionGeneracion(
-                            x.Id,
-                            (byte)DiaAcademico.Sabado,
-                            bloque,
-                            EsPreferente(disponibilidad, DiaAcademico.Sabado, bloque),
-                            fechas))
-                        .ToArray();
+            if (!DocenteDisponibleSabatino(disponibilidad, bloque))
+            {
+                throw new DatosGeneracionInvalidosException(
+                    $"El docente {docente.Apellidos}, {docente.Nombres} no tiene disponibilidad validada "
+                    + $"para {materia.Clave} el sábado en el bloque {bloque}.");
+            }
+            if (!EspacioDisponible(
+                    disponibilidadesEspacios,
+                    espacio.Id,
+                    DiaAcademico.Sabado,
+                    bloque))
+            {
+                throw new DatosGeneracionInvalidosException(
+                    $"El aula {espacio.Clave} · {espacio.Nombre} no está disponible el sábado "
+                    + $"en el bloque {bloque} para el grupo {grupo.Clave}.");
+            }
 
-            unidades.Add(new UnidadGenerable(
-                carga.Id,
-                carga.DocenteId,
-                carga.OfertaMateria.GrupoId,
-                checked((byte)(posicion + 1)),
-                opciones,
-                true,
-                true));
+            foreach (var fecha in fechas)
+            {
+                sesiones.Add(new SesionFijaGeneracion(
+                    new SesionPropuesta(
+                        carga.Id,
+                        carga.DocenteId,
+                        carga.OfertaMateria.GrupoId,
+                        espacio.Id,
+                        fecha,
+                        (byte)DiaAcademico.Sabado,
+                        bloque,
+                        true),
+                    $"{materia.Clave} · {materia.Nombre}",
+                    $"{docente.Apellidos}, {docente.Nombres}",
+                    grupo.Clave,
+                    $"{espacio.Clave} · {espacio.Nombre}"));
+            }
         }
     }
 
