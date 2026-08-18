@@ -1,0 +1,249 @@
+@page "/horario"
+@page "/horario/{VersionId:guid}"
+@attribute [Authorize(Roles = "Administrador,Jefatura")]
+@inject HorariosApi HorariosApi
+
+<PageTitle>Horario generado | Horarios Tec Ajalpan</PageTitle>
+
+<div class="page-heading horario-heading">
+  <div>
+    <span class="eyebrow">Revisión de propuesta</span>
+    <h1>Horario generado</h1>
+    <p>Consulta la versión guardada y filtra por carrera, modalidad o grupo.</p>
+  </div>
+  @if (detalle is not null)
+  {
+    <span class="status @(detalle.Pendientes.Count == 0 ? "status-active" : "status-draft")">
+      Versión @detalle.Numero · @detalle.EstadoTexto
+    </span>
+  }
+</div>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+  <div class="alerta-error">@error</div>
+}
+
+<article class="panel horario-toolbar">
+  <div class="form-field">
+    <label for="horario-periodo">Periodo</label>
+    <InputSelect id="horario-periodo" @bind-Value="periodoId"
+                 @bind-Value:after="OnPeriodoChanged">
+      <option value="@Guid.Empty">Selecciona un periodo</option>
+      @foreach (var periodo in periodos)
+      {
+        <option value="@periodo.Id">@periodo.Nombre</option>
+      }
+    </InputSelect>
+  </div>
+  <div class="form-field">
+    <label for="horario-version">Versión</label>
+    <InputSelect id="horario-version" @bind-Value="versionIdSeleccionada"
+                 @bind-Value:after="OnVersionChanged">
+      <option value="@Guid.Empty">Sin versiones guardadas</option>
+      @foreach (var version in versiones)
+      {
+        <option value="@version.Id">Versión @version.Numero · @version.EstadoTexto</option>
+      }
+    </InputSelect>
+  </div>
+  <div class="form-field">
+    <label for="horario-carrera">Carrera</label>
+    <select id="horario-carrera" @bind="carreraId">
+      <option value="@Guid.Empty">Todas las carreras</option>
+      @foreach (var carrera in Carreras)
+      {
+        <option value="@carrera.Id">@carrera.Nombre</option>
+      }
+    </select>
+  </div>
+  <div class="form-field">
+    <label for="horario-modalidad">Modalidad</label>
+    <select id="horario-modalidad" @bind="modalidadId">
+      <option value="@Guid.Empty">Todas las modalidades</option>
+      @foreach (var modalidad in Modalidades)
+      {
+        <option value="@modalidad.Id">@modalidad.Nombre</option>
+      }
+    </select>
+  </div>
+  <div class="form-field">
+    <label for="horario-grupo">Grupo</label>
+    <select id="horario-grupo" @bind="grupoId">
+      <option value="@Guid.Empty">Todos los grupos</option>
+      @foreach (var grupo in Grupos)
+      {
+        <option value="@grupo.Id">@grupo.Nombre</option>
+      }
+    </select>
+  </div>
+</article>
+
+@if (cargando)
+{
+  <article class="panel table-state">Cargando horario guardado…</article>
+}
+else if (detalle is null)
+{
+  <article class="panel empty-state compact">
+    <div class="empty-icon">⌁</div>
+    <h2>Sin versiones guardadas</h2>
+    <p>Genera una propuesta para este periodo y aquí podrás revisarla.</p>
+  </article>
+}
+else
+{
+  <div class="horario-resumen">
+    <div><span>Periodo</span><strong>@detalle.Periodo</strong></div>
+    <div><span>Registros visibles</span><strong>@SesionesFiltradas.Length</strong></div>
+    <div><span>Sesiones fechadas</span><strong>@SesionesFiltradas.Sum(x => x.NumeroSesiones)</strong></div>
+    <div><span>Origen</span><strong>@detalle.Origen</strong></div>
+  </div>
+
+  <article class="panel horario-tabla">
+    <div class="panel-title">
+      <div>
+        <span class="eyebrow">Distribución semanal</span>
+        <h2>Clases programadas</h2>
+      </div>
+      <span class="record-count">@SesionesFiltradas.Length registro(s)</span>
+    </div>
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Carrera / grupo</th>
+            <th>Día y hora</th>
+            <th>Materia</th>
+            <th>Docente</th>
+            <th>Aula</th>
+            <th>Vigencia</th>
+          </tr>
+        </thead>
+        <tbody>
+          @foreach (var sesion in SesionesFiltradas)
+          {
+            <tr>
+              <td><strong>@sesion.Grupo</strong><small>@sesion.Carrera · @sesion.Modalidad</small></td>
+              <td><strong>@sesion.DiaTexto</strong><small>@sesion.HoraInicio–@sesion.HoraFin</small></td>
+              <td><strong>@sesion.Materia</strong><small>@sesion.MateriaClave</small></td>
+              <td>@sesion.Docente</td>
+              <td>@sesion.Espacio</td>
+              <td><strong>@sesion.FechaInicio.ToString("dd/MM/yyyy")–@sesion.FechaFin.ToString("dd/MM/yyyy")</strong><small>@sesion.NumeroSesiones fecha(s)</small></td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </article>
+}
+
+@code {
+  [Parameter] public Guid? VersionId { get; set; }
+
+  private List<PeriodoGeneracionDto> periodos = [];
+  private List<HorarioVersionResumenDto> versiones = [];
+  private HorarioDetalleDto? detalle;
+  private Guid periodoId;
+  private Guid versionIdSeleccionada;
+  private Guid carreraId;
+  private Guid modalidadId;
+  private Guid grupoId;
+  private bool cargando = true;
+  private string? error;
+
+  private HorarioSesionResumenDto[] SesionesFiltradas => detalle?.Sesiones
+    .Where(x => carreraId == Guid.Empty || x.CarreraId == carreraId)
+    .Where(x => modalidadId == Guid.Empty || x.ModalidadId == modalidadId)
+    .Where(x => grupoId == Guid.Empty || x.GrupoId == grupoId)
+    .ToArray() ?? [];
+
+  private OpcionFiltro[] Carreras => detalle?.Sesiones
+    .Select(x => new OpcionFiltro(x.CarreraId, x.Carrera)).Distinct()
+    .OrderBy(x => x.Nombre).ToArray() ?? [];
+
+  private OpcionFiltro[] Modalidades => detalle?.Sesiones
+    .Where(x => carreraId == Guid.Empty || x.CarreraId == carreraId)
+    .Select(x => new OpcionFiltro(x.ModalidadId, x.Modalidad)).Distinct()
+    .OrderBy(x => x.Nombre).ToArray() ?? [];
+
+  private OpcionFiltro[] Grupos => detalle?.Sesiones
+    .Where(x => carreraId == Guid.Empty || x.CarreraId == carreraId)
+    .Where(x => modalidadId == Guid.Empty || x.ModalidadId == modalidadId)
+    .Select(x => new OpcionFiltro(x.GrupoId, x.Grupo)).Distinct()
+    .OrderBy(x => x.Nombre).ToArray() ?? [];
+
+  protected override async Task OnInitializedAsync()
+  {
+    try
+    {
+      periodos = (await HorariosApi.ListarPeriodosAsync()).ToList();
+      if (VersionId.HasValue)
+      {
+        await CargarDetalle(VersionId.Value);
+        if (detalle is not null)
+        {
+          periodoId = detalle.PeriodoId;
+          versiones = (await HorariosApi.ListarVersionesAsync(periodoId)).ToList();
+        }
+      }
+      else
+      {
+        periodoId = periodos.FirstOrDefault(x => x.Estado == 2)?.Id
+          ?? periodos.FirstOrDefault()?.Id
+          ?? Guid.Empty;
+        await CargarVersionesYUltima();
+      }
+    }
+    catch (Exception ex)
+    {
+      error = ex.Message;
+    }
+    finally
+    {
+      cargando = false;
+    }
+  }
+
+  private async Task OnPeriodoChanged()
+  {
+    LimpiarFiltros();
+    await CargarVersionesYUltima();
+  }
+
+  private async Task OnVersionChanged()
+  {
+    LimpiarFiltros();
+    if (versionIdSeleccionada == Guid.Empty)
+      detalle = null;
+    else
+      await CargarDetalle(versionIdSeleccionada);
+  }
+
+  private async Task CargarVersionesYUltima()
+  {
+    versiones = periodoId == Guid.Empty
+      ? []
+      : (await HorariosApi.ListarVersionesAsync(periodoId)).ToList();
+    versionIdSeleccionada = versiones.FirstOrDefault()?.Id ?? Guid.Empty;
+    if (versionIdSeleccionada == Guid.Empty)
+      detalle = null;
+    else
+      await CargarDetalle(versionIdSeleccionada);
+  }
+
+  private async Task CargarDetalle(Guid id)
+  {
+    detalle = await HorariosApi.ObtenerVersionAsync(id);
+    versionIdSeleccionada = detalle?.Id ?? Guid.Empty;
+  }
+
+  private void LimpiarFiltros()
+  {
+    carreraId = Guid.Empty;
+    modalidadId = Guid.Empty;
+    grupoId = Guid.Empty;
+  }
+
+  private sealed record OpcionFiltro(Guid Id, string Nombre);
+}
