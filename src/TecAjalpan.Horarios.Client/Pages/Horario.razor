@@ -2,6 +2,7 @@
 @page "/horario/{VersionId:guid}"
 @attribute [Authorize(Roles = "Administrador,Jefatura")]
 @inject HorariosApi HorariosApi
+@inject NavigationManager NavigationManager
 
 <PageTitle>Horario generado | Horarios Tec Ajalpan</PageTitle>
 
@@ -13,9 +14,17 @@
   </div>
   @if (detalle is not null)
   {
-    <span class="status @(detalle.Pendientes.Count == 0 ? "status-active" : "status-draft")">
-      Versión @detalle.Numero · @detalle.EstadoTexto
-    </span>
+    <div class="horario-heading-acciones">
+      <span class="status @(detalle.Pendientes.Count == 0 ? "status-active" : "status-draft")">
+        Versión @detalle.Numero · @detalle.EstadoTexto
+      </span>
+      @if (detalle.Estado == 1)
+      {
+        <button class="btn-descartar" type="button" @onclick="ConfirmarDescarte">
+          Descartar versión
+        </button>
+      }
+    </div>
   }
 </div>
 
@@ -192,6 +201,36 @@ else
   }
 }
 
+@if (mostrarConfirmacionDescartar && detalle is not null)
+{
+  <div class="modal-backdrop" @onclick="CerrarConfirmacionDescarte">
+    <section class="modal-card confirm-card" role="alertdialog" aria-modal="true"
+             aria-labelledby="titulo-descartar-version" @onclick:stopPropagation>
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">Confirmar descarte</span>
+          <h2 id="titulo-descartar-version">Descartar versión @detalle.Numero</h2>
+        </div>
+        <button class="icon-button" type="button" disabled="@descartando"
+                @onclick="CerrarConfirmacionDescarte">×</button>
+      </div>
+      <p>La propuesta dejará de aparecer en el generador y no podrá aprobarse ni publicarse.</p>
+      <p class="modal-help">Se conservará como registro histórico en la auditoría.</p>
+      @if (!string.IsNullOrWhiteSpace(error))
+      {
+        <div class="alerta-error">@error</div>
+      }
+      <div class="modal-actions">
+        <button class="btn-ghost" type="button" disabled="@descartando"
+                @onclick="CerrarConfirmacionDescarte">Cancelar</button>
+        <button class="btn-danger" type="button" disabled="@descartando" @onclick="DescartarVersion">
+          @(descartando ? "Descartando…" : "Sí, descartar versión")
+        </button>
+      </div>
+    </section>
+  </div>
+}
+
 @code {
   [Parameter] public Guid? VersionId { get; set; }
 
@@ -211,6 +250,8 @@ else
   private Guid grupoId;
   private Guid docenteId;
   private bool cargando = true;
+  private bool descartando;
+  private bool mostrarConfirmacionDescartar;
   private string? error;
 
   private HorarioSesionResumenDto[] SesionesFiltradas => detalle?.Sesiones
@@ -431,6 +472,42 @@ else
   {
     var indice = clave.Aggregate(0, (total, caracter) => total + caracter) % 6;
     return $"horario-color-{indice + 1}";
+  }
+
+  private void ConfirmarDescarte() => mostrarConfirmacionDescartar = true;
+
+  private void CerrarConfirmacionDescarte()
+  {
+    if (!descartando)
+      mostrarConfirmacionDescartar = false;
+  }
+
+  private async Task DescartarVersion()
+  {
+    if (detalle is null || descartando)
+      return;
+
+    descartando = true;
+    error = null;
+    try
+    {
+      var respuesta = await HorariosApi.DescartarAsync(detalle.Id);
+      if (!respuesta.Correcto)
+      {
+        error = respuesta.Mensaje ?? "No fue posible descartar la versión.";
+        return;
+      }
+
+      NavigationManager.NavigateTo("/generador");
+    }
+    catch (Exception ex)
+    {
+      error = ex.Message;
+    }
+    finally
+    {
+      descartando = false;
+    }
   }
 
   private sealed record OpcionFiltro(Guid Id, string Nombre);
