@@ -35,6 +35,165 @@ public sealed class HorariosController(
         return Ok(periodos);
     }
 
+    [HttpGet("periodos/{periodoId:guid}/versiones")]
+    public async Task<ActionResult<IReadOnlyCollection<HorarioVersionResumenDto>>> Versiones(
+        Guid periodoId,
+        CancellationToken cancellationToken)
+    {
+        var versiones = await dbContext.HorariosVersiones.AsNoTracking()
+            .Where(x => x.PeriodoId == periodoId && x.PeriodoCarreraId == null)
+            .OrderByDescending(x => x.Numero)
+            .Take(10)
+            .Select(x => new
+            {
+                x.Id,
+                x.Numero,
+                x.Estado,
+                x.Origen,
+                x.FechaCrea,
+                SesionesGeneradas = x.Sesiones.Count,
+                NumeroPendientes = x.Pendientes.Count,
+                HorasPendientes = x.Pendientes.Sum(p => (int?)p.HorasPendientes) ?? 0
+            })
+            .ToArrayAsync(cancellationToken);
+
+        var respuesta = new List<HorarioVersionResumenDto>(versiones.Length);
+        foreach (var version in versiones)
+        {
+            var horasProgramadas = await dbContext.SesionesHorario.AsNoTracking()
+                .Where(x => x.HorarioVersionId == version.Id)
+                .Select(x => new { x.CargaAcademicaId, x.Dia, x.Bloque, x.EspacioId })
+                .Distinct()
+                .CountAsync(cancellationToken);
+
+            respuesta.Add(new HorarioVersionResumenDto(
+                version.Id,
+                version.Numero,
+                (byte)version.Estado,
+                TextoEstado(version.Estado),
+                version.Origen,
+                version.FechaCrea,
+                horasProgramadas + version.HorasPendientes,
+                horasProgramadas,
+                version.SesionesGeneradas,
+                version.NumeroPendientes,
+                version.NumeroPendientes == 0));
+        }
+
+        return Ok(respuesta);
+    }
+
+    [HttpGet("versiones/{versionId:guid}")]
+    public async Task<ActionResult<HorarioDetalleDto>> Version(
+        Guid versionId,
+        CancellationToken cancellationToken)
+    {
+        var version = await dbContext.HorariosVersiones.AsNoTracking()
+            .Where(x => x.Id == versionId)
+            .Select(x => new
+            {
+                x.Id,
+                x.PeriodoId,
+                Periodo = x.Periodo.Nombre,
+                x.Numero,
+                x.Estado,
+                x.Origen,
+                x.FechaCrea
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (version is null)
+            return NotFound("No se encontró la versión de horario solicitada.");
+
+        var sesiones = await dbContext.SesionesHorario.AsNoTracking()
+            .Where(x => x.HorarioVersionId == versionId)
+            .Select(x => new
+            {
+                x.CargaAcademicaId,
+                CarreraId = x.CargaAcademica.OfertaMateria.Grupo.PeriodoCarrera.CarreraId,
+                Carrera = x.CargaAcademica.OfertaMateria.Grupo.PeriodoCarrera.Carrera.Nombre,
+                ModalidadId = x.CargaAcademica.OfertaMateria.Grupo.PeriodoCarrera.ModalidadId,
+                Modalidad = x.CargaAcademica.OfertaMateria.Grupo.PeriodoCarrera.Modalidad.Nombre,
+                x.GrupoId,
+                Grupo = x.CargaAcademica.OfertaMateria.Grupo.Clave,
+                MateriaClave = x.CargaAcademica.OfertaMateria.Materia.Clave,
+                Materia = x.CargaAcademica.OfertaMateria.Materia.Nombre,
+                DocenteNombres = x.CargaAcademica.Docente.Nombres,
+                DocenteApellidos = x.CargaAcademica.Docente.Apellidos,
+                EspacioClave = x.Espacio.Clave,
+                Espacio = x.Espacio.Nombre,
+                x.Dia,
+                x.Bloque,
+                x.Fecha
+            })
+            .ToArrayAsync(cancellationToken);
+
+        var sesionesResumidas = sesiones
+            .GroupBy(x => new
+            {
+                x.CargaAcademicaId,
+                x.CarreraId,
+                x.Carrera,
+                x.ModalidadId,
+                x.Modalidad,
+                x.GrupoId,
+                x.Grupo,
+                x.MateriaClave,
+                x.Materia,
+                x.DocenteNombres,
+                x.DocenteApellidos,
+                x.EspacioClave,
+                x.Espacio,
+                x.Dia,
+                x.Bloque
+            })
+            .Select(g => new HorarioSesionResumenDto(
+                g.Key.CargaAcademicaId,
+                g.Key.CarreraId,
+                g.Key.Carrera,
+                g.Key.ModalidadId,
+                g.Key.Modalidad,
+                g.Key.GrupoId,
+                g.Key.Grupo,
+                g.Key.MateriaClave,
+                g.Key.Materia,
+                $"{g.Key.DocenteApellidos}, {g.Key.DocenteNombres}",
+                $"{g.Key.EspacioClave} · {g.Key.Espacio}",
+                (byte)g.Key.Dia,
+                TextoDia(g.Key.Dia),
+                g.Key.Bloque,
+                HoraDeBloque(g.Key.Bloque),
+                HoraDeBloque(g.Key.Bloque + 1),
+                g.Min(x => x.Fecha),
+                g.Max(x => x.Fecha),
+                g.Count()))
+            .OrderBy(x => x.Carrera)
+            .ThenBy(x => x.Grupo)
+            .ThenBy(x => x.Dia)
+            .ThenBy(x => x.Bloque)
+            .ToArray();
+
+        var pendientes = await dbContext.PendientesGeneracion.AsNoTracking()
+            .Where(x => x.HorarioVersionId == versionId)
+            .Select(x => new PendienteGeneracionDto(
+                x.CargaAcademicaId,
+                x.HorasPendientes,
+                x.Codigo,
+                x.Detalle))
+            .ToArrayAsync(cancellationToken);
+
+        return Ok(new HorarioDetalleDto(
+            version.Id,
+            version.PeriodoId,
+            version.Periodo,
+            version.Numero,
+            (byte)version.Estado,
+            TextoEstado(version.Estado),
+            version.Origen,
+            version.FechaCrea,
+            sesionesResumidas,
+            pendientes));
+    }
+
     [HttpPost("generar")]
     public async Task<ActionResult<ResultadoGeneracionDto>> Generar(
         [FromBody] GenerarHorarioRequest request,
@@ -168,4 +327,28 @@ public sealed class HorariosController(
                 x.Codigo,
                 x.Detalle)).ToArray()));
     }
+
+    private static string TextoEstado(EstadoHorario estado) => estado switch
+    {
+        EstadoHorario.Borrador => "Borrador",
+        EstadoHorario.EnRevision => "En revisión",
+        EstadoHorario.Aprobado => "Aprobado",
+        EstadoHorario.Publicado => "Publicado",
+        EstadoHorario.Reemplazado => "Reemplazado",
+        _ => estado.ToString()
+    };
+
+    private static string TextoDia(DiaAcademico dia) => dia switch
+    {
+        DiaAcademico.Lunes => "Lunes",
+        DiaAcademico.Martes => "Martes",
+        DiaAcademico.Miercoles => "Miércoles",
+        DiaAcademico.Jueves => "Jueves",
+        DiaAcademico.Viernes => "Viernes",
+        DiaAcademico.Sabado => "Sábado",
+        _ => dia.ToString()
+    };
+
+    private static string HoraDeBloque(int bloque) =>
+        $"{Math.Clamp(7 + bloque, 0, 23):00}:00";
 }
