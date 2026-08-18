@@ -41,7 +41,9 @@ public sealed class HorariosController(
         CancellationToken cancellationToken)
     {
         var versiones = await dbContext.HorariosVersiones.AsNoTracking()
-            .Where(x => x.PeriodoId == periodoId && x.PeriodoCarreraId == null)
+            .Where(x => x.PeriodoId == periodoId
+                && x.PeriodoCarreraId == null
+                && x.Estado != EstadoHorario.Descartado)
             .OrderByDescending(x => x.Numero)
             .Take(10)
             .Select(x => new
@@ -89,7 +91,7 @@ public sealed class HorariosController(
         CancellationToken cancellationToken)
     {
         var version = await dbContext.HorariosVersiones.AsNoTracking()
-            .Where(x => x.Id == versionId)
+            .Where(x => x.Id == versionId && x.Estado != EstadoHorario.Descartado)
             .Select(x => new
             {
                 x.Id,
@@ -240,6 +242,16 @@ public sealed class HorariosController(
             await dbContext.SaveChangesAsync(CancellationToken.None);
             throw;
         }
+        catch (DatosGeneracionInvalidosException ex)
+        {
+            ejecucion.Estado = EstadoEjecucion.Fallida;
+            ejecucion.Fin = DateTime.UtcNow;
+            ejecucion.Mensaje = ex.Message.Length <= 1000
+                ? ex.Message
+                : ex.Message[..1000];
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            return Conflict(ex.Message);
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             ejecucion.Estado = EstadoEjecucion.Fallida;
@@ -259,7 +271,7 @@ public sealed class HorariosController(
             PeriodoId = request.PeriodoId,
             PeriodoCarreraId = null,
             Numero = ultimoNumero + 1,
-            Origen = "CP-SAT institucional"
+            Origen = "CP-SAT escolarizado + módulos sabatinos fijos"
         };
 
         foreach (var propuesta in resultado.Sesiones)
@@ -274,7 +286,8 @@ public sealed class HorariosController(
                 Dia = (DiaAcademico)propuesta.Dia,
                 Bloque = propuesta.Bloque,
                 DuracionBloques = 1,
-                Origen = OrigenSesion.Automatica
+                Origen = propuesta.EsFija ? OrigenSesion.Manual : OrigenSesion.Automatica,
+                FijadaParaRegeneracion = propuesta.EsFija
             });
         }
 
@@ -331,6 +344,32 @@ public sealed class HorariosController(
                 x.Detalle)).ToArray()));
     }
 
+    [HttpPost("versiones/{versionId:guid}/descartar")]
+    public async Task<IActionResult> Descartar(
+        Guid versionId,
+        CancellationToken cancellationToken)
+    {
+        var version = await dbContext.HorariosVersiones
+            .SingleOrDefaultAsync(x => x.Id == versionId, cancellationToken);
+        if (version is null)
+            return NotFound("No se encontró la versión de horario solicitada.");
+        if (version.Estado != EstadoHorario.Borrador)
+            return Conflict("Únicamente se pueden descartar versiones en borrador.");
+
+        version.Descartar();
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict(
+                "La versión fue modificada por otro usuario. Actualiza la pantalla e intenta nuevamente.");
+        }
+
+        return Ok();
+    }
+
     private static string TextoEstado(EstadoHorario estado) => estado switch
     {
         EstadoHorario.Borrador => "Borrador",
@@ -338,6 +377,7 @@ public sealed class HorariosController(
         EstadoHorario.Aprobado => "Aprobado",
         EstadoHorario.Publicado => "Publicado",
         EstadoHorario.Reemplazado => "Reemplazado",
+        EstadoHorario.Descartado => "Descartado",
         _ => estado.ToString()
     };
 
