@@ -2498,6 +2498,30 @@ main {
   text-decoration: none;
 }
 
+.generador-botones-resultado {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.btn-descartar {
+  padding: 10px 14px;
+  border: 1px solid #d9b9bb;
+  border-radius: 9px;
+  color: var(--vino);
+  background: white;
+  font-weight: 750;
+}
+
+.btn-descartar:hover {
+  border-color: var(--vino);
+  background: #fff7f7;
+}
+
+.btn-descartar:disabled {
+  opacity: .55;
+}
+
 .generador-guardado strong,
 .generador-guardado small {
   display: block;
@@ -2542,6 +2566,14 @@ main {
 
 .horario-heading {
   align-items: center;
+}
+
+.horario-heading-acciones {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .horario-filtros {
@@ -2846,6 +2878,11 @@ main {
 
   .generador-acciones .btn-primary {
     width: 100%;
+  }
+
+  .generador-botones-resultado {
+    align-items: stretch;
+    flex-direction: column-reverse;
   }
 
   .horario-leyenda {
