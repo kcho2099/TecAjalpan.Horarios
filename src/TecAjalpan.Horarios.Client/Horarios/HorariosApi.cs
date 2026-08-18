@@ -42,18 +42,42 @@ public sealed class HorariosApi(HttpClient httpClient)
             antiforgery?.Token ?? throw new InvalidOperationException(
                 "No fue posible obtener el token antifalsificación."));
 
-        using var response = await httpClient.SendAsync(message, cancellationToken);
-        if (response.IsSuccessStatusCode)
+        HttpResponseMessage response;
+        try
         {
-            var resultado = await response.Content.ReadFromJsonAsync<ResultadoGeneracionDto>(
-                cancellationToken: cancellationToken);
-            return new ResultadoPeticionGeneracion(true, null, resultado);
+            response = await httpClient.SendAsync(message, cancellationToken);
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new ResultadoPeticionGeneracion(
+                false,
+                "La comunicación agotó el tiempo de espera. La generación puede tardar hasta 10 minutos; vuelve a intentarlo y mantén abierta esta ventana.",
+                null);
+        }
+        catch (HttpRequestException ex) when (
+            ex.Message.Contains("timedout", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("timed out", StringComparison.OrdinalIgnoreCase))
+        {
+            return new ResultadoPeticionGeneracion(
+                false,
+                "La comunicación con el servidor se interrumpió por tiempo de espera. Intenta nuevamente o utiliza un límite menor.",
+                null);
         }
 
-        return new ResultadoPeticionGeneracion(
-            false,
-            await LeerMensajeAsync(response, cancellationToken),
-            null);
+        using (response)
+        {
+            if (response.IsSuccessStatusCode)
+            {
+                var resultado = await response.Content.ReadFromJsonAsync<ResultadoGeneracionDto>(
+                    cancellationToken: cancellationToken);
+                return new ResultadoPeticionGeneracion(true, null, resultado);
+            }
+
+            return new ResultadoPeticionGeneracion(
+                false,
+                await LeerMensajeAsync(response, cancellationToken),
+                null);
+        }
     }
 
     public async Task<ResultadoOperacionHorario> DescartarAsync(
