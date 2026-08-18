@@ -1,7 +1,6 @@
 @page "/generador"
 @attribute [Authorize(Roles = "Administrador,Jefatura")]
 @inject HorariosApi HorariosApi
-@inject PeriodosApi PeriodosApi
 
 <PageTitle>Generador | Horarios Tec Ajalpan</PageTitle>
 
@@ -113,7 +112,7 @@
 </div>
 
 @code {
-  private List<PeriodoDto> periodos = [];
+  private List<PeriodoGeneracionDto> periodos = [];
   private Guid periodoId;
   private int tiempoLimiteSegundos = 60;
   private bool cargando = true;
@@ -131,7 +130,7 @@
   {
     try
     {
-      periodos = (await PeriodosApi.ListarAsync()).ToList();
+      periodos = (await HorariosApi.ListarPeriodosAsync()).ToList();
       periodoId = periodos.FirstOrDefault(x => x.Estado == 2)?.Id
         ?? periodos.FirstOrDefault()?.Id
         ?? Guid.Empty;
