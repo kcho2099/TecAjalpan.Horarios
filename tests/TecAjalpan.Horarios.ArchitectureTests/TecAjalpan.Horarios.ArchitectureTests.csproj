@@ -6,6 +6,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\TecAjalpan.Horarios.Application\TecAjalpan.Horarios.Application.csproj" />
     <ProjectReference Include="..\..\src\TecAjalpan.Horarios.Domain\TecAjalpan.Horarios.Domain.csproj" />
+    <ProjectReference Include="..\..\src\TecAjalpan.Horarios.Scheduling\TecAjalpan.Horarios.Scheduling.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
