@@ -9,7 +9,8 @@ public interface IFuenteDatosGeneracion
 
 public sealed record DatosGeneracion(
     Guid PeriodoId,
-    IReadOnlyCollection<UnidadGenerable> Unidades);
+    IReadOnlyCollection<UnidadGenerable> Unidades,
+    byte MaximoConsecutivasMateria = 2);
 
 public sealed record UnidadGenerable(
     Guid CargaAcademicaId,
@@ -17,7 +18,8 @@ public sealed record UnidadGenerable(
     Guid GrupoId,
     byte Numero,
     IReadOnlyCollection<OpcionGeneracion> Opciones,
-    bool MantenerMismoEspacio = false);
+    bool MantenerMismoEspacio = false,
+    bool EsSabatina = false);
 
 public sealed record OpcionGeneracion(
     Guid EspacioId,
