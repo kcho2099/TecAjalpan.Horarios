@@ -1,4 +1,6 @@
 using TecAjalpan.Horarios.Application.Abstractions;
+using TecAjalpan.Horarios.Domain.Entities;
+using TecAjalpan.Horarios.Domain.Enums;
 using TecAjalpan.Horarios.Scheduling;
 
 namespace TecAjalpan.Horarios.ArchitectureTests;
@@ -121,7 +123,7 @@ public sealed class GeneradorHorariosTests
     }
 
     [Fact]
-    public async Task PermiteModuloSabatinoDeCuatroHorasConsecutivas()
+    public async Task IntegraModuloSabatinoComoSesionesFijasSinOptimizarlo()
     {
         var periodoId = Guid.NewGuid();
         var cargaId = Guid.NewGuid();
@@ -129,23 +131,24 @@ public sealed class GeneradorHorariosTests
         var grupoId = Guid.NewGuid();
         var espacioId = Guid.NewGuid();
         var fecha = new DateOnly(2026, 8, 29);
-        var unidades = Enumerable.Range(1, 4)
-            .Select(x => new UnidadGenerable(
-                cargaId,
-                docenteId,
-                grupoId,
-                checked((byte)x),
-                [new OpcionGeneracion(
+        var sesionesFijas = Enumerable.Range(1, 4)
+            .Select(x => new SesionFijaGeneracion(
+                new SesionPropuesta(
+                    cargaId,
+                    docenteId,
+                    grupoId,
                     espacioId,
+                    fecha,
                     6,
                     checked((byte)x),
-                    false,
-                    [fecha])],
-                true,
-                true))
+                    true),
+                "ACC-0001 · Materia sabatina",
+                "Docente de prueba",
+                "1SA",
+                "A-1 · Aula 1"))
             .ToArray();
         var generador = new GeneradorHorariosCpSat(
-            new FuenteFalsa(new DatosGeneracion(periodoId, unidades, 2)));
+            new FuenteFalsa(new DatosGeneracion(periodoId, [], 2, sesionesFijas)));
 
         var resultado = await generador.GenerarAsync(
             new SolicitudGeneracion(periodoId, null, 10, false),
@@ -157,7 +160,62 @@ public sealed class GeneradorHorariosTests
         Assert.Equal(
             bloquesEsperados,
             resultado.Sesiones.Select(x => (int)x.Bloque).OrderBy(x => x).ToArray());
+        Assert.All(resultado.Sesiones, x => Assert.True(x.EsFija));
     }
+
+    [Fact]
+    public async Task RechazaCruceEntreSesionesSabatinasFijas()
+    {
+        var periodoId = Guid.NewGuid();
+        var docenteId = Guid.NewGuid();
+        var fecha = new DateOnly(2026, 8, 29);
+        var sesiones = new[]
+        {
+            CrearSesionFija(Guid.NewGuid(), docenteId, Guid.NewGuid(), Guid.NewGuid(), fecha),
+            CrearSesionFija(Guid.NewGuid(), docenteId, Guid.NewGuid(), Guid.NewGuid(), fecha)
+        };
+        var generador = new GeneradorHorariosCpSat(
+            new FuenteFalsa(new DatosGeneracion(periodoId, [], 2, sesiones)));
+
+        var excepcion = await Assert.ThrowsAsync<DatosGeneracionInvalidosException>(() =>
+            generador.GenerarAsync(
+                new SolicitudGeneracion(periodoId, null, 10, false),
+                CancellationToken.None));
+
+        Assert.Contains("Conflicto sabatino fijo", excepcion.Message);
+        Assert.Contains("Docente de prueba", excepcion.Message);
+    }
+
+    [Fact]
+    public void PermiteDescartarUnicamenteVersionEnBorrador()
+    {
+        var version = new HorarioVersion();
+
+        version.Descartar();
+
+        Assert.Equal(EstadoHorario.Descartado, version.Estado);
+        Assert.Throws<InvalidOperationException>(() => version.Descartar());
+    }
+
+    private static SesionFijaGeneracion CrearSesionFija(
+        Guid cargaId,
+        Guid docenteId,
+        Guid grupoId,
+        Guid espacioId,
+        DateOnly fecha) => new(
+        new SesionPropuesta(
+            cargaId,
+            docenteId,
+            grupoId,
+            espacioId,
+            fecha,
+            6,
+            1,
+            true),
+        "ACC-0001 · Materia sabatina",
+        "Docente de prueba",
+        "1SA",
+        "A-1 · Aula 1");
 
     private static UnidadGenerable CrearUnidad(
         Guid docenteId,
