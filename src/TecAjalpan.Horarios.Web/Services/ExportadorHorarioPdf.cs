@@ -55,43 +55,114 @@ internal static class ExportadorHorarioPdf
         if (sesiones.Length == 0)
             return [new PaginaPdf("Sin sesiones", "No hay clases con los filtros seleccionados.", false, [])];
 
+        var paginas = new List<PaginaPdf>();
         if (grupoId.HasValue)
         {
-            return sesiones
-                .GroupBy(x => new { x.GrupoId, x.Grupo, x.Carrera, x.Modalidad })
-                .OrderBy(x => x.Key.Carrera)
-                .ThenBy(x => x.Key.Grupo)
-                .Select(x => new PaginaPdf(
-                    $"Grupo {x.Key.Grupo}",
-                    $"{x.Key.Carrera} - {x.Key.Modalidad}",
+            foreach (var grupo in sesiones
+                         .GroupBy(x => new { x.GrupoId, x.Grupo, x.Carrera, x.Modalidad })
+                         .OrderBy(x => x.Key.Carrera)
+                         .ThenBy(x => x.Key.Grupo))
+            {
+                AgregarPaginasPorVigencia(
+                    paginas,
+                    $"Grupo {grupo.Key.Grupo}",
+                    $"{grupo.Key.Carrera} - {grupo.Key.Modalidad}",
                     false,
-                    x.ToArray()))
-                .ToArray();
+                    grupo.ToArray());
+            }
+            return paginas.ToArray();
         }
 
         if (docenteId.HasValue)
         {
-            return sesiones
-                .GroupBy(x => new { x.DocenteId, x.Docente })
-                .OrderBy(x => x.Key.Docente)
-                .Select(x => new PaginaPdf(
-                    x.Key.Docente,
+            foreach (var docente in sesiones
+                         .GroupBy(x => new { x.DocenteId, x.Docente })
+                         .OrderBy(x => x.Key.Docente))
+            {
+                AgregarPaginasPorVigencia(
+                    paginas,
+                    docente.Key.Docente,
                     "Horario del docente - incluye todas las carreras y grupos filtrados",
                     true,
-                    x.ToArray()))
-                .ToArray();
+                    docente.ToArray());
+            }
+            return paginas.ToArray();
         }
 
-        return sesiones
-            .GroupBy(x => new { x.GrupoId, x.Grupo, x.Carrera, x.Modalidad })
-            .OrderBy(x => x.Key.Carrera)
-            .ThenBy(x => x.Key.Grupo)
-            .Select(x => new PaginaPdf(
-                $"Grupo {x.Key.Grupo}",
-                $"{x.Key.Carrera} - {x.Key.Modalidad}",
+        foreach (var grupo in sesiones
+                     .GroupBy(x => new { x.GrupoId, x.Grupo, x.Carrera, x.Modalidad })
+                     .OrderBy(x => x.Key.Carrera)
+                     .ThenBy(x => x.Key.Grupo))
+        {
+            AgregarPaginasPorVigencia(
+                paginas,
+                $"Grupo {grupo.Key.Grupo}",
+                $"{grupo.Key.Carrera} - {grupo.Key.Modalidad}",
                 false,
-                x.ToArray()))
-            .ToArray();
+                grupo.ToArray());
+        }
+        return paginas.ToArray();
+    }
+
+    private static void AgregarPaginasPorVigencia(
+        List<PaginaPdf> paginas,
+        string titulo,
+        string subtitulo,
+        bool mostrarGrupo,
+        HorarioSesionResumenDto[] sesiones)
+    {
+        var escolarizadas = sesiones.Where(x => x.Dia != 6).ToArray();
+        if (escolarizadas.Length > 0)
+        {
+            paginas.Add(new PaginaPdf(
+                titulo,
+                $"{subtitulo} - Escolarizado",
+                mostrarGrupo,
+                escolarizadas));
+        }
+
+        foreach (var vigencia in sesiones
+                     .Where(x => x.Dia == 6)
+                     .GroupBy(x => new { x.FechaInicio, x.FechaFin })
+                     .OrderBy(x => x.Key.FechaInicio))
+        {
+            var distribuciones = SepararSuperposiciones(vigencia.ToArray());
+            for (var indice = 0; indice < distribuciones.Length; indice++)
+            {
+                var numeroHoja = distribuciones.Length > 1
+                    ? $" - hoja {indice + 1} de {distribuciones.Length}"
+                    : string.Empty;
+                var descripcionModulo =
+                    $"Módulo sabatino {vigencia.Key.FechaInicio:dd/MM/yyyy}-{vigencia.Key.FechaFin:dd/MM/yyyy}{numeroHoja}";
+                paginas.Add(new PaginaPdf(
+                    titulo,
+                    mostrarGrupo ? descripcionModulo : $"{subtitulo} - {descripcionModulo}",
+                    mostrarGrupo,
+                    distribuciones[indice]));
+            }
+        }
+    }
+
+    private static HorarioSesionResumenDto[][] SepararSuperposiciones(
+        HorarioSesionResumenDto[] sesiones)
+    {
+        var paginas = new List<List<HorarioSesionResumenDto>>();
+        foreach (var carga in sesiones
+                     .GroupBy(x => x.CargaAcademicaId)
+                     .OrderBy(x => x.Min(y => y.Bloque)))
+        {
+            var posiciones = carga.Select(x => (x.Dia, x.Bloque)).ToHashSet();
+            var pagina = paginas.FirstOrDefault(x =>
+                !x.Any(y => posiciones.Contains((y.Dia, y.Bloque))));
+            if (pagina is null)
+            {
+                pagina = [];
+                paginas.Add(pagina);
+            }
+            pagina.AddRange(carga);
+        }
+
+        return paginas.Select(x => x.ToArray()).ToArray();
     }
 
     private static byte[] DibujarPagina(
@@ -259,10 +330,14 @@ internal static class ExportadorHorarioPdf
         }
         lienzo.Texto(x + 6, cursor, bloque.Sesion.MateriaClave, 5.8, false, ColorPdf.Secundario);
         cursor -= 8;
-        var contexto = mostrarGrupo
-            ? $"Grupo {bloque.Sesion.Grupo} · {bloque.Sesion.Carrera}"
-            : bloque.Sesion.Docente;
-        foreach (var linea in AjustarTexto(contexto, 21, alto >= 140 ? 2 : 1))
+        var lineasContexto = mostrarGrupo
+            ? new[]
+            {
+                $"Grupo {bloque.Sesion.Grupo}",
+                CarreraCorta(bloque.Sesion.Carrera)
+            }
+            : AjustarTexto(bloque.Sesion.Docente, 21, 2);
+        foreach (var linea in lineasContexto)
         {
             lienzo.Texto(x + 6, cursor, linea, 5.7, false, ColorPdf.Texto);
             cursor -= 7;
@@ -362,6 +437,16 @@ internal static class ExportadorHorarioPdf
     private static string Acortar(string texto, int maximo) => texto.Length <= maximo
         ? texto
         : $"{texto[..Math.Max(1, maximo - 3)]}...";
+
+    private static string CarreraCorta(string carrera)
+    {
+        var corta = carrera
+            .Replace("Ingeniería en ", "Ing. ", StringComparison.OrdinalIgnoreCase)
+            .Replace("Ingeniería ", "Ing. ", StringComparison.OrdinalIgnoreCase)
+            .Replace("Licenciatura en ", "Lic. ", StringComparison.OrdinalIgnoreCase)
+            .Replace("Licenciatura ", "Lic. ", StringComparison.OrdinalIgnoreCase);
+        return Acortar(corta, 21);
+    }
 
     private static byte[] CrearDocumento(byte[][] contenidos)
     {
