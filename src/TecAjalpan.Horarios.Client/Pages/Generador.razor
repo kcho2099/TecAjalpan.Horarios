@@ -1,0 +1,183 @@
+@page "/generador"
+@attribute [Authorize(Roles = "Administrador,Jefatura")]
+@inject HorariosApi HorariosApi
+@inject PeriodosApi PeriodosApi
+
+<PageTitle>Generador | Horarios Tec Ajalpan</PageTitle>
+
+<div class="page-heading">
+  <div>
+    <span class="eyebrow">Planeación institucional</span>
+    <h1>Generador de horarios</h1>
+    <p>Construye una propuesta conjunta para todas las carreras, sin cruces de docentes, grupos ni aulas compartidas.</p>
+  </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+  <div class="alerta-error">@error</div>
+}
+@if (!string.IsNullOrWhiteSpace(mensaje))
+{
+  <div class="alerta-exito">@mensaje</div>
+}
+
+<div class="generador-grid">
+  <article class="panel generador-configuracion">
+    <div class="panel-title">
+      <div>
+        <span class="eyebrow">Nueva ejecución</span>
+        <h2>Generar propuesta</h2>
+      </div>
+    </div>
+
+    @if (cargando)
+    {
+      <div class="table-state">Cargando periodos…</div>
+    }
+    else
+    {
+      <div class="form-field">
+        <label for="periodo-generador">Periodo</label>
+        <InputSelect id="periodo-generador" @bind-Value="periodoId">
+          <option value="@Guid.Empty">Selecciona un periodo</option>
+          @foreach (var periodo in periodos)
+          {
+            <option value="@periodo.Id">@periodo.Nombre · @periodo.EstadoTexto</option>
+          }
+        </InputSelect>
+      </div>
+
+      <div class="form-field">
+        <label for="limite-generador">Tiempo máximo de búsqueda</label>
+        <InputNumber id="limite-generador" @bind-Value="tiempoLimiteSegundos"
+                     min="10" max="600" />
+        <small>Entre 10 y 600 segundos. El motor conservará la mejor solución encontrada.</small>
+      </div>
+
+      <div class="generador-aviso">
+        <strong>Alcance institucional</strong>
+        <p>Se incluirán todas las cargas autorizadas del periodo. La generación no separa carreras porque debe proteger docentes y espacios compartidos.</p>
+      </div>
+
+      <button class="btn-primary generador-boton" disabled="@NoPuedeGenerar" @onclick="Generar">
+        @(generando ? "Generando propuesta…" : "Generar horario")
+      </button>
+    }
+  </article>
+
+  <article class="panel generador-resultado">
+    @if (resultado is null)
+    {
+      <div class="empty-state compact">
+        <div class="empty-icon">⌁</div>
+        <h2>Sin ejecución reciente</h2>
+        <p>Autoriza las cargas académicas y genera la primera versión en borrador.</p>
+      </div>
+    }
+    else
+    {
+      <div class="panel-title">
+        <div>
+          <span class="eyebrow">Versión @resultado.NumeroVersion</span>
+          <h2>@(resultado.Completa ? "Propuesta completa" : "Propuesta parcial")</h2>
+        </div>
+        <span class="status @(resultado.Completa ? "status-active" : "status-draft")">
+          @(resultado.Completa ? "Sin pendientes" : $"{resultado.Pendientes.Count} pendiente(s)")
+        </span>
+      </div>
+
+      <div class="generador-metricas">
+        <div><span>Horas solicitadas</span><strong>@resultado.HorasSolicitadas</strong></div>
+        <div><span>Horas programadas</span><strong>@resultado.HorasProgramadas</strong></div>
+        <div><span>Sesiones fechadas</span><strong>@resultado.SesionesGeneradas</strong></div>
+        <div><span>Cobertura</span><strong>@Cobertura.ToString("0.#")%</strong></div>
+      </div>
+
+      @if (resultado.Pendientes.Count > 0)
+      {
+        <div class="generador-pendientes">
+          <h3>Elementos que requieren ajuste</h3>
+          @foreach (var pendiente in resultado.Pendientes)
+          {
+            <div class="generador-pendiente">
+              <span>@pendiente.Codigo.Replace('_', ' ')</span>
+              <strong>@pendiente.Horas h</strong>
+              <p>@pendiente.Detalle</p>
+            </div>
+          }
+        </div>
+      }
+    }
+  </article>
+</div>
+
+@code {
+  private List<PeriodoDto> periodos = [];
+  private Guid periodoId;
+  private int tiempoLimiteSegundos = 60;
+  private bool cargando = true;
+  private bool generando;
+  private string? error;
+  private string? mensaje;
+  private ResultadoGeneracionDto? resultado;
+
+  private bool NoPuedeGenerar => generando || periodoId == Guid.Empty;
+  private decimal Cobertura => resultado is null || resultado.HorasSolicitadas == 0
+    ? 0
+    : decimal.Divide(resultado.HorasProgramadas * 100, resultado.HorasSolicitadas);
+
+  protected override async Task OnInitializedAsync()
+  {
+    try
+    {
+      periodos = (await PeriodosApi.ListarAsync()).ToList();
+      periodoId = periodos.FirstOrDefault(x => x.Estado == 2)?.Id
+        ?? periodos.FirstOrDefault()?.Id
+        ?? Guid.Empty;
+    }
+    catch (Exception ex)
+    {
+      error = ex.Message;
+    }
+    finally
+    {
+      cargando = false;
+    }
+  }
+
+  private async Task Generar()
+  {
+    if (NoPuedeGenerar)
+      return;
+
+    generando = true;
+    error = null;
+    mensaje = null;
+    resultado = null;
+    try
+    {
+      var respuesta = await HorariosApi.GenerarAsync(new GenerarHorarioRequest(
+        periodoId,
+        Math.Clamp(tiempoLimiteSegundos, 10, 600)));
+      if (!respuesta.Correcto || respuesta.Resultado is null)
+      {
+        error = respuesta.Mensaje ?? "No fue posible generar el horario.";
+        return;
+      }
+
+      resultado = respuesta.Resultado;
+      mensaje = resultado.Completa
+        ? $"La versión {resultado.NumeroVersion} se guardó completa en borrador."
+        : $"La versión {resultado.NumeroVersion} se guardó con pendientes para revisión.";
+    }
+    catch (Exception ex)
+    {
+      error = ex.Message;
+    }
+    finally
+    {
+      generando = false;
+    }
+  }
+}
