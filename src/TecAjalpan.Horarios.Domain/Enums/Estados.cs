@@ -42,7 +42,8 @@ public enum EstadoHorario : byte
     EnRevision = 2,
     Aprobado = 3,
     Publicado = 4,
-    Reemplazado = 5
+    Reemplazado = 5,
+    Descartado = 6
 }
 
 public enum OrigenSesion : byte
