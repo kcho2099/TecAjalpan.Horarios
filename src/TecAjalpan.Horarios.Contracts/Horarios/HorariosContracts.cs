@@ -1,5 +1,11 @@
 namespace TecAjalpan.Horarios.Contracts.Horarios;
 
+public sealed record PeriodoGeneracionDto(
+    Guid Id,
+    string Nombre,
+    byte Estado,
+    string EstadoTexto);
+
 public sealed record GenerarHorarioRequest(
     Guid PeriodoId,
     int TiempoLimiteSegundos = 60);
