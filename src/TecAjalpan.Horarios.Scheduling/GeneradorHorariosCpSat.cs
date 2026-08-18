@@ -43,14 +43,38 @@ public sealed class GeneradorHorariosCpSat(
 
         if (decisiones.Count > 0)
         {
-            var pesoProgramacion = datos.Unidades.Count + 1L;
+            var huecosGrupo = AgregarPenalizacionDeHuecos(
+                modelo,
+                decisiones,
+                x => x.Unidad.GrupoId,
+                "grupo");
+            var huecosDocente = AgregarPenalizacionDeHuecos(
+                modelo,
+                decisiones,
+                x => x.Unidad.DocenteId,
+                "docente");
+
+            const long pesoHuecoGrupo = 12L;
+            const long pesoHuecoDocente = 10L;
+            const long pesoPreferencia = 1L;
+            var penalizacionSecundariaMaxima =
+                (huecosGrupo.Count * pesoHuecoGrupo)
+                + (huecosDocente.Count * pesoHuecoDocente)
+                + (decisiones.Count * pesoPreferencia);
+            var pesoProgramacion = penalizacionSecundariaMaxima + 1L;
             var objetivo = LinearExpr.NewBuilder();
             foreach (var decision in decisiones)
             {
                 objetivo.AddTerm(
                     decision.Variable,
-                    pesoProgramacion + (decision.Opcion.Preferente ? 1L : 0L));
+                    pesoProgramacion
+                    + (decision.Opcion.Preferente ? pesoPreferencia : 0L));
             }
+
+            foreach (var hueco in huecosGrupo)
+                objetivo.AddTerm(hueco, -pesoHuecoGrupo);
+            foreach (var hueco in huecosDocente)
+                objetivo.AddTerm(hueco, -pesoHuecoDocente);
 
             modelo.Maximize(objetivo);
         }
@@ -286,6 +310,91 @@ public sealed class GeneradorHorariosCpSat(
                 }
             }
         }
+    }
+
+    private static List<BoolVar> AgregarPenalizacionDeHuecos(
+        CpModel modelo,
+        List<Decision> decisiones,
+        Func<Decision, Guid> seleccionarRecurso,
+        string nombreRecurso)
+    {
+        const int primerBloque = 1;
+        const int ultimoBloque = 8;
+        var huecos = new List<BoolVar>();
+        var decisionesEscolarizadas = decisiones
+            .Where(x => !x.Unidad.EsSabatina)
+            .ToArray();
+
+        foreach (var recursoDia in decisionesEscolarizadas.GroupBy(x => new
+                 {
+                     RecursoId = seleccionarRecurso(x),
+                     x.Opcion.Dia
+                 }))
+        {
+            var ocupacion = new Dictionary<int, BoolVar>();
+            for (var bloque = primerBloque; bloque <= ultimoBloque; bloque++)
+            {
+                var variables = recursoDia
+                    .Where(x => x.Opcion.Bloque == bloque)
+                    .Select(x => x.Variable)
+                    .Distinct()
+                    .ToArray();
+                var ocupado = modelo.NewBoolVar(
+                    $"ocupado_{nombreRecurso}_{recursoDia.Key.RecursoId:N}_{recursoDia.Key.Dia}_{bloque}");
+                ocupacion.Add(bloque, ocupado);
+
+                if (variables.Length == 0)
+                {
+                    modelo.Add(ocupado == 0);
+                    continue;
+                }
+
+                foreach (var variable in variables)
+                    modelo.Add(ocupado >= variable);
+                modelo.Add(ocupado <= LinearExpr.Sum(variables));
+            }
+
+            for (var bloque = primerBloque + 1; bloque < ultimoBloque; bloque++)
+            {
+                var hayClaseAntes = CrearDisyuncion(
+                    modelo,
+                    ocupacion.Where(x => x.Key < bloque).Select(x => x.Value),
+                    $"antes_{nombreRecurso}_{recursoDia.Key.RecursoId:N}_{recursoDia.Key.Dia}_{bloque}");
+                var hayClaseDespues = CrearDisyuncion(
+                    modelo,
+                    ocupacion.Where(x => x.Key > bloque).Select(x => x.Value),
+                    $"despues_{nombreRecurso}_{recursoDia.Key.RecursoId:N}_{recursoDia.Key.Dia}_{bloque}");
+                var hueco = modelo.NewBoolVar(
+                    $"hueco_{nombreRecurso}_{recursoDia.Key.RecursoId:N}_{recursoDia.Key.Dia}_{bloque}");
+
+                modelo.Add(hueco <= hayClaseAntes);
+                modelo.Add(hueco <= hayClaseDespues);
+                modelo.Add(hueco + ocupacion[bloque] <= 1);
+                modelo.Add(hueco >= hayClaseAntes + hayClaseDespues - ocupacion[bloque] - 1);
+                huecos.Add(hueco);
+            }
+        }
+
+        return huecos;
+    }
+
+    private static BoolVar CrearDisyuncion(
+        CpModel modelo,
+        IEnumerable<BoolVar> variables,
+        string nombre)
+    {
+        var elementos = variables.Distinct().ToArray();
+        var resultado = modelo.NewBoolVar(nombre);
+        if (elementos.Length == 0)
+        {
+            modelo.Add(resultado == 0);
+            return resultado;
+        }
+
+        foreach (var elemento in elementos)
+            modelo.Add(resultado >= elemento);
+        modelo.Add(resultado <= LinearExpr.Sum(elementos));
+        return resultado;
     }
 
     private static BoolVar? BuscarVariable(
