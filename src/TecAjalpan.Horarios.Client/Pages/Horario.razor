@@ -231,6 +231,17 @@ else
   </div>
 }
 
+@if (Ocupado)
+{
+  <div class="loading-overlay" role="status" aria-live="polite" aria-busy="true">
+    <div class="loading-card horario-loading-card">
+      <span class="loading-spinner"></span>
+      <strong>@TextoCarga</strong>
+      <small>@DetalleCarga</small>
+    </div>
+  </div>
+}
+
 @code {
   [Parameter] public Guid? VersionId { get; set; }
 
@@ -254,6 +265,13 @@ else
   private bool mostrarConfirmacionDescartar;
   private string? error;
 
+  private bool Ocupado => cargando || descartando;
+  private string TextoCarga => descartando
+    ? "Descartando la versión…"
+    : "Preparando el horario semanal…";
+  private string DetalleCarga => descartando
+    ? "Actualizando las versiones disponibles."
+    : "Cargando las sesiones y construyendo la cuadrícula.";
   private HorarioSesionResumenDto[] SesionesFiltradas => detalle?.Sesiones
     .Where(x => carreraId == Guid.Empty || x.CarreraId == carreraId)
     .Where(x => modalidadId == Guid.Empty || x.ModalidadId == modalidadId)
@@ -331,19 +349,47 @@ else
 
   private async Task OnPeriodoChanged()
   {
-    LimpiarFiltros();
-    await CargarVersionesYUltima();
-    SeleccionarPrimerGrupo();
+    cargando = true;
+    error = null;
+    await Task.Yield();
+    try
+    {
+      LimpiarFiltros();
+      await CargarVersionesYUltima();
+      SeleccionarPrimerGrupo();
+    }
+    catch (Exception ex)
+    {
+      error = ex.Message;
+    }
+    finally
+    {
+      cargando = false;
+    }
   }
 
   private async Task OnVersionChanged()
   {
-    LimpiarFiltros();
-    if (versionIdSeleccionada == Guid.Empty)
-      detalle = null;
-    else
-      await CargarDetalle(versionIdSeleccionada);
-    SeleccionarPrimerGrupo();
+    cargando = true;
+    error = null;
+    await Task.Yield();
+    try
+    {
+      LimpiarFiltros();
+      if (versionIdSeleccionada == Guid.Empty)
+        detalle = null;
+      else
+        await CargarDetalle(versionIdSeleccionada);
+      SeleccionarPrimerGrupo();
+    }
+    catch (Exception ex)
+    {
+      error = ex.Message;
+    }
+    finally
+    {
+      cargando = false;
+    }
   }
 
   private Task OnCarreraChanged()
