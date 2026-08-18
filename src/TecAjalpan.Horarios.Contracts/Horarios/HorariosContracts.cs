@@ -10,6 +10,21 @@ public sealed record GenerarHorarioRequest(
     Guid PeriodoId,
     int TiempoLimiteSegundos = 60);
 
+public sealed record InicioGeneracionDto(
+    Guid EjecucionId,
+    byte Estado,
+    string EstadoTexto);
+
+public sealed record EstadoGeneracionDto(
+    Guid EjecucionId,
+    byte Estado,
+    string EstadoTexto,
+    string? Mensaje,
+    int TiempoLimiteSegundos,
+    DateTime? Inicio,
+    DateTime? Fin,
+    ResultadoGeneracionDto? Resultado);
+
 public sealed record ResultadoGeneracionDto(
     Guid HorarioVersionId,
     int NumeroVersion,

@@ -26,8 +26,7 @@ builder.Services.AddScoped(sp =>
     handler.InnerHandler = new HttpClientHandler();
     return new HttpClient(handler)
     {
-        BaseAddress = new Uri(builder.HostEnvironment.BaseAddress),
-        Timeout = TimeSpan.FromMinutes(12)
+        BaseAddress = new Uri(builder.HostEnvironment.BaseAddress)
     };
 });
 builder.Services.AddScoped<AuthApi>();

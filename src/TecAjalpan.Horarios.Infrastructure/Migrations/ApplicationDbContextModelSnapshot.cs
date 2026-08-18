@@ -913,6 +913,9 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                     b.Property<int>("HorasSolicitadas")
                         .HasColumnType("int");
 
+                    b.Property<Guid?>("HorarioVersionId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTime?>("Inicio")
                         .HasColumnType("datetime2");
 
@@ -945,6 +948,8 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("HorarioVersionId");
 
                     b.ToTable("EjecucionesGenerador", "Horarios");
                 });

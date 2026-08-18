@@ -1,5 +1,6 @@
 @page "/generador"
 @attribute [Authorize(Roles = "Administrador,Jefatura")]
+@implements IAsyncDisposable
 @inject HorariosApi HorariosApi
 
 <PageTitle>Generador | Horarios Tec Ajalpan</PageTitle>
@@ -191,7 +192,7 @@
       @if (generando)
       {
         <span class="loading-hint">
-          Tiempo máximo configurado: @TiempoLimiteTexto. No cierres esta ventana.
+          Tiempo máximo: @TiempoLimiteTexto. Puedes cambiar de pantalla; el proceso continuará en el servidor.
         </span>
       }
     </div>
@@ -209,25 +210,32 @@
   private string? error;
   private string? mensaje;
   private ResultadoGeneracionDto? resultado;
+  private EstadoGeneracionDto? estadoGeneracion;
   private List<HorarioVersionResumenDto> versiones = [];
+  private readonly CancellationTokenSource cicloVida = new();
   private HorarioVersionResumenDto? versionActual => versiones.FirstOrDefault();
 
   private bool Ocupado => cargando || generando || descartando;
   private string TextoCarga => generando
-    ? "Generando y compactando el horario…"
+    ? estadoGeneracion?.Estado == 1
+      ? "La generación está en espera…"
+      : "Generando y compactando el horario…"
     : descartando
       ? "Descartando la versión…"
       : "Cargando el generador de horarios…";
   private string DetalleCarga => generando
-    ? "Revisando disponibilidad, cruces de docentes, grupos, aulas compartidas y espacios libres."
+    ? estadoGeneracion?.Mensaje
+      ?? "Revisando disponibilidad, cruces de docentes, grupos, aulas compartidas y espacios libres."
     : descartando
       ? "Actualizando las versiones disponibles."
       : "Consultando periodos y propuestas guardadas.";
-  private string TiempoLimiteTexto => tiempoLimiteSegundos < 60
-    ? $"{tiempoLimiteSegundos} segundos"
-    : tiempoLimiteSegundos == 60
+  private int TiempoLimiteActual => estadoGeneracion?.TiempoLimiteSegundos
+    ?? tiempoLimiteSegundos;
+  private string TiempoLimiteTexto => TiempoLimiteActual < 60
+    ? $"{TiempoLimiteActual} segundos"
+    : TiempoLimiteActual == 60
       ? "1 minuto"
-      : $"{tiempoLimiteSegundos / 60d:0.#} minutos";
+      : $"{TiempoLimiteActual / 60d:0.#} minutos";
   private bool NoPuedeGenerar => generando || periodoId == Guid.Empty;
   private Guid HorarioVersionId => resultado?.HorarioVersionId ?? versionActual?.Id ?? Guid.Empty;
   private int NumeroVersion => resultado?.NumeroVersion ?? versionActual?.Numero ?? 0;
@@ -249,6 +257,7 @@
         ?? periodos.FirstOrDefault()?.Id
         ?? Guid.Empty;
       await CargarVersiones();
+      await ReanudarGeneracionActivaAsync();
     }
     catch (Exception ex)
     {
@@ -270,6 +279,7 @@
     try
     {
       await CargarVersiones();
+      await ReanudarGeneracionActivaAsync();
     }
     catch (Exception ex)
     {
@@ -297,27 +307,90 @@
     error = null;
     mensaje = null;
     resultado = null;
+    estadoGeneracion = null;
     await Task.Yield();
     try
     {
       var respuesta = await HorariosApi.GenerarAsync(new GenerarHorarioRequest(
-        periodoId,
-        Math.Clamp(tiempoLimiteSegundos, 10, 600)));
+        periodoId, Math.Clamp(tiempoLimiteSegundos, 10, 600)), cicloVida.Token);
       if (!respuesta.Correcto || respuesta.Resultado is null)
       {
         error = respuesta.Mensaje ?? "No fue posible generar el horario.";
         return;
       }
 
-      resultado = respuesta.Resultado;
-      await CargarVersiones();
-      mensaje = resultado.Completa
-        ? $"La versión {resultado.NumeroVersion} se guardó completa en borrador."
-        : $"La versión {resultado.NumeroVersion} se guardó con pendientes para revisión.";
+      await VigilarEjecucionAsync(respuesta.Resultado.EjecucionId);
+    }
+    catch (OperationCanceledException) when (cicloVida.IsCancellationRequested)
+    {
     }
     catch (Exception ex)
     {
       error = ex.Message;
+    }
+    finally
+    {
+      generando = false;
+    }
+  }
+
+  private async Task ReanudarGeneracionActivaAsync()
+  {
+    if (periodoId == Guid.Empty)
+      return;
+
+    var activa = await HorariosApi.ObtenerEjecucionActivaAsync(
+      periodoId, cicloVida.Token);
+    if (activa is null)
+      return;
+
+    cargando = false;
+    generando = true;
+    estadoGeneracion = activa;
+    await VigilarEjecucionAsync(activa.EjecucionId);
+  }
+
+  private async Task VigilarEjecucionAsync(Guid ejecucionId)
+  {
+    generando = true;
+    try
+    {
+      while (!cicloVida.IsCancellationRequested)
+      {
+        estadoGeneracion = await HorariosApi.ConsultarEstadoAsync(
+          ejecucionId, cicloVida.Token);
+        await InvokeAsync(StateHasChanged);
+        if (estadoGeneracion is null)
+        {
+          error = "No fue posible consultar el estado de la generación.";
+          return;
+        }
+
+        if (estadoGeneracion.Estado == 3)
+        {
+          resultado = estadoGeneracion.Resultado;
+          if (resultado is null)
+          {
+            error = "La generación terminó, pero no se encontró la versión guardada.";
+            return;
+          }
+
+          await CargarVersiones();
+          mensaje = resultado.Completa
+            ? $"La versión {resultado.NumeroVersion} se guardó completa en borrador."
+            : $"La versión {resultado.NumeroVersion} se guardó con pendientes para revisión.";
+          return;
+        }
+
+        if (estadoGeneracion.Estado is 4 or 5)
+        {
+          error = estadoGeneracion.Mensaje
+            ?? "La generación no pudo completarse.";
+          return;
+        }
+
+        await Task.Delay(TimeSpan.FromSeconds(2), cicloVida.Token);
+      }
     }
     finally
     {
@@ -364,5 +437,12 @@
     {
       descartando = false;
     }
+  }
+
+  public ValueTask DisposeAsync()
+  {
+    cicloVida.Cancel();
+    cicloVida.Dispose();
+    return ValueTask.CompletedTask;
   }
 }

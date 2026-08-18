@@ -15,6 +15,9 @@
   @if (detalle is not null)
   {
     <div class="horario-heading-acciones">
+      <a class="btn-exportar-horario" href="@UrlExportarExcel" download>
+        <span aria-hidden="true">⇩</span> Exportar Excel
+      </a>
       <span class="status @(detalle.Pendientes.Count == 0 ? "status-active" : "status-draft")">
         Versión @detalle.Numero · @detalle.EstadoTexto
       </span>
@@ -272,6 +275,28 @@ else
   private string DetalleCarga => descartando
     ? "Actualizando las versiones disponibles."
     : "Cargando las sesiones y construyendo la cuadrícula.";
+  private string UrlExportarExcel
+  {
+    get
+    {
+      if (detalle is null)
+        return "#";
+
+      var filtros = new List<string>();
+      if (carreraId != Guid.Empty)
+        filtros.Add($"carreraId={carreraId}");
+      if (modalidadId != Guid.Empty)
+        filtros.Add($"modalidadId={modalidadId}");
+      if (grupoId != Guid.Empty)
+        filtros.Add($"grupoId={grupoId}");
+      if (docenteId != Guid.Empty)
+        filtros.Add($"docenteId={docenteId}");
+      var consulta = filtros.Count == 0
+        ? string.Empty
+        : "?" + string.Join("&", filtros);
+      return $"api/horarios/versiones/{detalle.Id}/excel{consulta}";
+    }
+  }
   private HorarioSesionResumenDto[] SesionesFiltradas => detalle?.Sesiones
     .Where(x => carreraId == Guid.Empty || x.CarreraId == carreraId)
     .Where(x => modalidadId == Guid.Empty || x.ModalidadId == modalidadId)

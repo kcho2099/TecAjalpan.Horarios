@@ -97,6 +97,7 @@ public sealed class EjecucionGenerador : EntidadAuditable
 {
     public Guid PeriodoId { get; set; }
     public Guid? PeriodoCarreraId { get; set; }
+    public Guid? HorarioVersionId { get; set; }
     public EstadoEjecucion Estado { get; set; } = EstadoEjecucion.Pendiente;
     public DateTime? Inicio { get; set; }
     public DateTime? Fin { get; set; }

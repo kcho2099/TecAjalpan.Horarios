@@ -2626,6 +2626,32 @@ main {
   gap: 10px;
 }
 
+.btn-exportar-horario {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 8px 13px;
+  border: 1px solid #b8cbbf;
+  border-radius: 9px;
+  color: #215f42;
+  background: #f2faf5;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.btn-exportar-horario:hover {
+  border-color: #579370;
+  color: #174d34;
+  background: #e7f6ed;
+}
+
+.btn-exportar-horario span {
+  font-size: 18px;
+  line-height: 1;
+}
+
 .horario-filtros {
   display: grid;
   gap: 16px;

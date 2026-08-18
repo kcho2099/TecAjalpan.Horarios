@@ -14,6 +14,9 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IUsuarioActual, UsuarioActual>();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<IGeneradorHorarios, GeneradorHorariosCpSat>();
+builder.Services.AddSingleton<IColaGeneracionHorarios, ColaGeneracionHorarios>();
+builder.Services.AddScoped<ProcesadorGeneracionHorarios>();
+builder.Services.AddHostedService<GeneracionHorariosBackgroundService>();
 builder.Services.AddHostedService<CierreAutomaticoPeriodosService>();
 builder.Services.AddControllersWithViews(options =>
 {

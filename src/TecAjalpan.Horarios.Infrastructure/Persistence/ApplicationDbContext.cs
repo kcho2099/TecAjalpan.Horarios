@@ -355,8 +355,11 @@ public sealed class ApplicationDbContext(
                 .OnDelete(DeleteBehavior.NoAction);
         });
 
-        modelBuilder.Entity<EjecucionGenerador>()
-            .ToTable("EjecucionesGenerador", "Horarios");
+        modelBuilder.Entity<EjecucionGenerador>(entity =>
+        {
+            entity.ToTable("EjecucionesGenerador", "Horarios");
+            entity.HasIndex(x => x.HorarioVersionId);
+        });
 
         modelBuilder.Entity<RevisionHorario>()
             .ToTable("RevisionesHorario", "Gobierno");

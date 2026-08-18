@@ -26,7 +26,7 @@ public sealed class HorariosApi(HttpClient httpClient)
             $"api/horarios/versiones/{versionId}",
             cancellationToken);
 
-    public async Task<ResultadoPeticionGeneracion> GenerarAsync(
+    public async Task<ResultadoInicioGeneracion> GenerarAsync(
         GenerarHorarioRequest request,
         CancellationToken cancellationToken = default)
     {
@@ -42,42 +42,41 @@ public sealed class HorariosApi(HttpClient httpClient)
             antiforgery?.Token ?? throw new InvalidOperationException(
                 "No fue posible obtener el token antifalsificación."));
 
-        HttpResponseMessage response;
-        try
-        {
-            response = await httpClient.SendAsync(message, cancellationToken);
-        }
-        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return new ResultadoPeticionGeneracion(
-                false,
-                "La comunicación agotó el tiempo de espera. La generación puede tardar hasta 10 minutos; vuelve a intentarlo y mantén abierta esta ventana.",
-                null);
-        }
-        catch (HttpRequestException ex) when (
-            ex.Message.Contains("timedout", StringComparison.OrdinalIgnoreCase)
-            || ex.Message.Contains("timed out", StringComparison.OrdinalIgnoreCase))
-        {
-            return new ResultadoPeticionGeneracion(
-                false,
-                "La comunicación con el servidor se interrumpió por tiempo de espera. Intenta nuevamente o utiliza un límite menor.",
-                null);
-        }
-
-        using (response)
+        using (var response = await httpClient.SendAsync(message, cancellationToken))
         {
             if (response.IsSuccessStatusCode)
             {
-                var resultado = await response.Content.ReadFromJsonAsync<ResultadoGeneracionDto>(
+                var resultado = await response.Content.ReadFromJsonAsync<InicioGeneracionDto>(
                     cancellationToken: cancellationToken);
-                return new ResultadoPeticionGeneracion(true, null, resultado);
+                return new ResultadoInicioGeneracion(true, null, resultado);
             }
 
-            return new ResultadoPeticionGeneracion(
+            return new ResultadoInicioGeneracion(
                 false,
                 await LeerMensajeAsync(response, cancellationToken),
                 null);
         }
+    }
+
+    public Task<EstadoGeneracionDto?> ConsultarEstadoAsync(
+        Guid ejecucionId,
+        CancellationToken cancellationToken = default) =>
+        httpClient.GetFromJsonAsync<EstadoGeneracionDto>(
+            $"api/horarios/ejecuciones/{ejecucionId}",
+            cancellationToken);
+
+    public async Task<EstadoGeneracionDto?> ObtenerEjecucionActivaAsync(
+        Guid periodoId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync(
+            $"api/horarios/periodos/{periodoId}/ejecucion-activa",
+            cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NoContent)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<EstadoGeneracionDto>(
+            cancellationToken: cancellationToken);
     }
 
     public async Task<ResultadoOperacionHorario> DescartarAsync(
@@ -132,10 +131,10 @@ public sealed class HorariosApi(HttpClient httpClient)
     private sealed record ApiError(string? Mensaje, string? Detail);
 }
 
-public sealed record ResultadoPeticionGeneracion(
+public sealed record ResultadoInicioGeneracion(
     bool Correcto,
     string? Mensaje,
-    ResultadoGeneracionDto? Resultado);
+    InicioGeneracionDto? Resultado);
 
 public sealed record ResultadoOperacionHorario(
     bool Correcto,

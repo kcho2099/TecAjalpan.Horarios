@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using TecAjalpan.Horarios.Application.Abstractions;
 using TecAjalpan.Horarios.Application.Security;
@@ -8,6 +7,7 @@ using TecAjalpan.Horarios.Contracts.Horarios;
 using TecAjalpan.Horarios.Domain.Entities;
 using TecAjalpan.Horarios.Domain.Enums;
 using TecAjalpan.Horarios.Infrastructure.Persistence;
+using TecAjalpan.Horarios.Web.Services;
 
 namespace TecAjalpan.Horarios.Web.Controllers;
 
@@ -16,7 +16,7 @@ namespace TecAjalpan.Horarios.Web.Controllers;
 [Authorize(Policy = Politicas.GenerarHorario)]
 public sealed class HorariosController(
     ApplicationDbContext dbContext,
-    IGeneradorHorarios generador) : ControllerBase
+    IColaGeneracionHorarios colaGeneracion) : ControllerBase
 {
     [HttpGet("periodos")]
     public async Task<ActionResult<IReadOnlyCollection<PeriodoGeneracionDto>>> Periodos(
@@ -199,8 +199,117 @@ public sealed class HorariosController(
             pendientes));
     }
 
+    [HttpGet("versiones/{versionId:guid}/excel")]
+    public async Task<IActionResult> ExportarExcel(
+        Guid versionId,
+        [FromQuery] Guid? carreraId,
+        [FromQuery] Guid? modalidadId,
+        [FromQuery] Guid? grupoId,
+        [FromQuery] Guid? docenteId,
+        CancellationToken cancellationToken)
+    {
+        var version = await dbContext.HorariosVersiones.AsNoTracking()
+            .Where(x => x.Id == versionId && x.Estado != EstadoHorario.Descartado)
+            .Select(x => new { Periodo = x.Periodo.Nombre, x.Numero })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (version is null)
+            return NotFound("No se encontró la versión de horario solicitada.");
+
+        var consulta = dbContext.SesionesHorario.AsNoTracking()
+            .Where(x => x.HorarioVersionId == versionId);
+        if (carreraId.HasValue)
+        {
+            consulta = consulta.Where(x =>
+                x.CargaAcademica.OfertaMateria.Grupo.PeriodoCarrera.CarreraId == carreraId.Value);
+        }
+        if (modalidadId.HasValue)
+        {
+            consulta = consulta.Where(x =>
+                x.CargaAcademica.OfertaMateria.Grupo.PeriodoCarrera.ModalidadId == modalidadId.Value);
+        }
+        if (grupoId.HasValue)
+            consulta = consulta.Where(x => x.GrupoId == grupoId.Value);
+        if (docenteId.HasValue)
+            consulta = consulta.Where(x => x.DocenteId == docenteId.Value);
+
+        var sesiones = await consulta.Select(x => new
+            {
+                x.CargaAcademicaId,
+                CarreraId = x.CargaAcademica.OfertaMateria.Grupo.PeriodoCarrera.CarreraId,
+                Carrera = x.CargaAcademica.OfertaMateria.Grupo.PeriodoCarrera.Carrera.Nombre,
+                ModalidadId = x.CargaAcademica.OfertaMateria.Grupo.PeriodoCarrera.ModalidadId,
+                Modalidad = x.CargaAcademica.OfertaMateria.Grupo.PeriodoCarrera.Modalidad.Nombre,
+                x.GrupoId,
+                Grupo = x.CargaAcademica.OfertaMateria.Grupo.Clave,
+                MateriaClave = x.CargaAcademica.OfertaMateria.Materia.Clave,
+                Materia = x.CargaAcademica.OfertaMateria.Materia.Nombre,
+                x.DocenteId,
+                DocenteNombres = x.CargaAcademica.Docente.Nombres,
+                DocenteApellidos = x.CargaAcademica.Docente.Apellidos,
+                EspacioClave = x.Espacio.Clave,
+                Espacio = x.Espacio.Nombre,
+                x.Dia,
+                x.Bloque,
+                x.Fecha
+            })
+            .ToArrayAsync(cancellationToken);
+        var filas = sesiones
+            .GroupBy(x => new
+            {
+                x.CargaAcademicaId,
+                x.CarreraId,
+                x.Carrera,
+                x.ModalidadId,
+                x.Modalidad,
+                x.GrupoId,
+                x.Grupo,
+                x.MateriaClave,
+                x.Materia,
+                x.DocenteId,
+                x.DocenteNombres,
+                x.DocenteApellidos,
+                x.EspacioClave,
+                x.Espacio,
+                x.Dia,
+                x.Bloque
+            })
+            .Select(g => new HorarioSesionResumenDto(
+                g.Key.CargaAcademicaId,
+                g.Key.CarreraId,
+                g.Key.Carrera,
+                g.Key.ModalidadId,
+                g.Key.Modalidad,
+                g.Key.GrupoId,
+                g.Key.Grupo,
+                g.Key.MateriaClave,
+                g.Key.Materia,
+                g.Key.DocenteId,
+                $"{g.Key.DocenteApellidos}, {g.Key.DocenteNombres}",
+                $"{g.Key.EspacioClave} · {g.Key.Espacio}",
+                (byte)g.Key.Dia,
+                TextoDia(g.Key.Dia),
+                g.Key.Bloque,
+                HoraDeBloque(g.Key.Bloque),
+                HoraDeBloque(g.Key.Bloque + 1),
+                g.Min(x => x.Fecha),
+                g.Max(x => x.Fecha),
+                g.Count()))
+            .OrderBy(x => x.Carrera)
+            .ThenBy(x => x.Grupo)
+            .ThenBy(x => x.Dia)
+            .ThenBy(x => x.Bloque)
+            .ToArray();
+
+        var archivo = ExportadorHorarioExcel.Crear(
+            version.Periodo, version.Numero, filas);
+        return File(
+            archivo,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"horario-{version.Numero}-{DateTime.UtcNow:yyyyMMddHHmm}.xlsx");
+    }
+
     [HttpPost("generar")]
-    public async Task<ActionResult<ResultadoGeneracionDto>> Generar(
+    public async Task<ActionResult<InicioGeneracionDto>> Generar(
         [FromBody] GenerarHorarioRequest request,
         CancellationToken cancellationToken)
     {
@@ -213,135 +322,64 @@ public sealed class HorariosController(
         if (estadoPeriodo == EstadoPeriodo.Cerrado)
             return Conflict("No se puede generar una nueva versión para un periodo cerrado.");
 
-        var solicitud = new SolicitudGeneracion(
-            request.PeriodoId,
-            null,
-            Math.Clamp(request.TiempoLimiteSegundos, 1, 600),
-            false);
+        var existeActiva = await dbContext.EjecucionesGenerador.AsNoTracking()
+            .AnyAsync(x => x.PeriodoId == request.PeriodoId
+                && x.PeriodoCarreraId == null
+                && (x.Estado == EstadoEjecucion.Pendiente
+                    || x.Estado == EstadoEjecucion.Ejecutando),
+                cancellationToken);
+        if (existeActiva)
+            return Conflict("Ya existe una generación en proceso para este periodo.");
+
         var ejecucion = new EjecucionGenerador
         {
             PeriodoId = request.PeriodoId,
             PeriodoCarreraId = null,
-            Estado = EstadoEjecucion.Ejecutando,
-            Inicio = DateTime.UtcNow,
-            TiempoLimiteSegundos = solicitud.TiempoLimiteSegundos
+            Estado = EstadoEjecucion.Pendiente,
+            TiempoLimiteSegundos = Math.Clamp(request.TiempoLimiteSegundos, 10, 600),
+            Mensaje = "La generación está en espera para comenzar."
         };
         dbContext.EjecucionesGenerador.Add(ejecucion);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await colaGeneracion.EncolarAsync(ejecucion.Id, CancellationToken.None);
 
-        ResultadoGeneracion resultado;
-        try
-        {
-            resultado = await generador.GenerarAsync(solicitud, cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            ejecucion.Estado = EstadoEjecucion.Cancelada;
-            ejecucion.Fin = DateTime.UtcNow;
-            ejecucion.Mensaje = "La generación fue cancelada.";
-            await dbContext.SaveChangesAsync(CancellationToken.None);
-            throw;
-        }
-        catch (DatosGeneracionInvalidosException ex)
-        {
-            ejecucion.Estado = EstadoEjecucion.Fallida;
-            ejecucion.Fin = DateTime.UtcNow;
-            ejecucion.Mensaje = ex.Message.Length <= 1000
-                ? ex.Message
-                : ex.Message[..1000];
-            await dbContext.SaveChangesAsync(CancellationToken.None);
-            return Conflict(ex.Message);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            ejecucion.Estado = EstadoEjecucion.Fallida;
-            ejecucion.Fin = DateTime.UtcNow;
-            ejecucion.Mensaje = ex.Message.Length <= 1000
-                ? ex.Message
-                : ex.Message[..1000];
-            await dbContext.SaveChangesAsync(CancellationToken.None);
-            throw;
-        }
+        return AcceptedAtAction(
+            nameof(ConsultarEjecucion),
+            new { ejecucionId = ejecucion.Id },
+            new InicioGeneracionDto(
+                ejecucion.Id,
+                (byte)ejecucion.Estado,
+                TextoEstadoEjecucion(ejecucion.Estado)));
+    }
 
-        var ultimoNumero = await dbContext.HorariosVersiones
-            .Where(x => x.PeriodoId == request.PeriodoId && x.PeriodoCarreraId == null)
-            .MaxAsync(x => (int?)x.Numero, cancellationToken) ?? 0;
-        var version = new HorarioVersion
-        {
-            PeriodoId = request.PeriodoId,
-            PeriodoCarreraId = null,
-            Numero = ultimoNumero + 1,
-            Origen = "CP-SAT escolarizado + módulos sabatinos fijos"
-        };
+    [HttpGet("ejecuciones/{ejecucionId:guid}")]
+    public async Task<ActionResult<EstadoGeneracionDto>> ConsultarEjecucion(
+        Guid ejecucionId,
+        CancellationToken cancellationToken)
+    {
+        var estado = await CrearEstadoEjecucionAsync(ejecucionId, cancellationToken);
+        return estado is null
+            ? NotFound("No se encontró la ejecución solicitada.")
+            : Ok(estado);
+    }
 
-        foreach (var propuesta in resultado.Sesiones)
-        {
-            version.Sesiones.Add(new SesionHorario
-            {
-                CargaAcademicaId = propuesta.CargaAcademicaId,
-                DocenteId = propuesta.DocenteId,
-                GrupoId = propuesta.GrupoId,
-                EspacioId = propuesta.EspacioId,
-                Fecha = propuesta.Fecha,
-                Dia = (DiaAcademico)propuesta.Dia,
-                Bloque = propuesta.Bloque,
-                DuracionBloques = 1,
-                Origen = propuesta.EsFija ? OrigenSesion.Manual : OrigenSesion.Automatica,
-                FijadaParaRegeneracion = propuesta.EsFija
-            });
-        }
+    [HttpGet("periodos/{periodoId:guid}/ejecucion-activa")]
+    public async Task<ActionResult<EstadoGeneracionDto>> EjecucionActiva(
+        Guid periodoId,
+        CancellationToken cancellationToken)
+    {
+        var ejecucionId = await dbContext.EjecucionesGenerador.AsNoTracking()
+            .Where(x => x.PeriodoId == periodoId
+                && x.PeriodoCarreraId == null
+                && (x.Estado == EstadoEjecucion.Pendiente
+                    || x.Estado == EstadoEjecucion.Ejecutando))
+            .OrderByDescending(x => x.FechaCrea)
+            .Select(x => (Guid?)x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (!ejecucionId.HasValue)
+            return NoContent();
 
-        foreach (var pendiente in resultado.Pendientes)
-        {
-            version.Pendientes.Add(new PendienteGeneracion
-            {
-                CargaAcademicaId = pendiente.CargaAcademicaId,
-                HorasPendientes = pendiente.Horas,
-                Codigo = pendiente.Codigo,
-                Detalle = pendiente.Detalle
-            });
-        }
-
-        ejecucion.Estado = EstadoEjecucion.Completada;
-        ejecucion.Fin = DateTime.UtcNow;
-        ejecucion.HorasSolicitadas = resultado.HorasSolicitadas;
-        ejecucion.HorasProgramadas = resultado.HorasProgramadas;
-        ejecucion.Mensaje = resultado.Completa
-            ? "Generación institucional completa."
-            : $"Generación parcial con {resultado.Pendientes.Count} carga(s) pendiente(s).";
-        dbContext.HorariosVersiones.Add(version);
-        try
-        {
-            await dbContext.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException ex) when (
-            ex.InnerException is SqlException { Number: 2601 or 2627 })
-        {
-            foreach (var sesion in version.Sesiones)
-                dbContext.Entry(sesion).State = EntityState.Detached;
-            foreach (var pendiente in version.Pendientes)
-                dbContext.Entry(pendiente).State = EntityState.Detached;
-            dbContext.Entry(version).State = EntityState.Detached;
-            ejecucion.Estado = EstadoEjecucion.Fallida;
-            ejecucion.Fin = DateTime.UtcNow;
-            ejecucion.Mensaje = "Otra generación creó una versión simultáneamente.";
-            await dbContext.SaveChangesAsync(CancellationToken.None);
-            return Conflict(
-                "No se pudo guardar la versión porque otra generación modificó el periodo. Intenta nuevamente.");
-        }
-
-        return Ok(new ResultadoGeneracionDto(
-            version.Id,
-            version.Numero,
-            resultado.Completa,
-            resultado.HorasSolicitadas,
-            resultado.HorasProgramadas,
-            resultado.Sesiones.Count,
-            resultado.Pendientes.Select(x => new PendienteGeneracionDto(
-                x.CargaAcademicaId,
-                x.Horas,
-                x.Codigo,
-                x.Detalle)).ToArray()));
+        return Ok(await CrearEstadoEjecucionAsync(ejecucionId.Value, cancellationToken));
     }
 
     [HttpPost("versiones/{versionId:guid}/descartar")]
@@ -370,6 +408,73 @@ public sealed class HorariosController(
         return Ok();
     }
 
+    private async Task<EstadoGeneracionDto?> CrearEstadoEjecucionAsync(
+        Guid ejecucionId,
+        CancellationToken cancellationToken)
+    {
+        var ejecucion = await dbContext.EjecucionesGenerador.AsNoTracking()
+            .Where(x => x.Id == ejecucionId)
+            .Select(x => new
+            {
+                x.Id,
+                x.Estado,
+                x.Mensaje,
+                x.TiempoLimiteSegundos,
+                x.Inicio,
+                x.Fin,
+                x.HorasSolicitadas,
+                x.HorasProgramadas,
+                x.HorarioVersionId
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (ejecucion is null)
+            return null;
+
+        ResultadoGeneracionDto? resultado = null;
+        if (ejecucion.Estado == EstadoEjecucion.Completada
+            && ejecucion.HorarioVersionId.HasValue)
+        {
+            var version = await dbContext.HorariosVersiones.AsNoTracking()
+                .Where(x => x.Id == ejecucion.HorarioVersionId.Value)
+                .Select(x => new
+                {
+                    x.Id,
+                    x.Numero,
+                    SesionesGeneradas = x.Sesiones.Count
+                })
+                .SingleOrDefaultAsync(cancellationToken);
+            if (version is not null)
+            {
+                var pendientes = await dbContext.PendientesGeneracion.AsNoTracking()
+                    .Where(x => x.HorarioVersionId == version.Id)
+                    .Select(x => new PendienteGeneracionDto(
+                        x.CargaAcademicaId,
+                        x.HorasPendientes,
+                        x.Codigo,
+                        x.Detalle))
+                    .ToArrayAsync(cancellationToken);
+                resultado = new ResultadoGeneracionDto(
+                    version.Id,
+                    version.Numero,
+                    pendientes.Length == 0,
+                    ejecucion.HorasSolicitadas,
+                    ejecucion.HorasProgramadas,
+                    version.SesionesGeneradas,
+                    pendientes);
+            }
+        }
+
+        return new EstadoGeneracionDto(
+            ejecucion.Id,
+            (byte)ejecucion.Estado,
+            TextoEstadoEjecucion(ejecucion.Estado),
+            ejecucion.Mensaje,
+            ejecucion.TiempoLimiteSegundos,
+            ejecucion.Inicio,
+            ejecucion.Fin,
+            resultado);
+    }
+
     private static string TextoEstado(EstadoHorario estado) => estado switch
     {
         EstadoHorario.Borrador => "Borrador",
@@ -378,6 +483,16 @@ public sealed class HorariosController(
         EstadoHorario.Publicado => "Publicado",
         EstadoHorario.Reemplazado => "Reemplazado",
         EstadoHorario.Descartado => "Descartado",
+        _ => estado.ToString()
+    };
+
+    private static string TextoEstadoEjecucion(EstadoEjecucion estado) => estado switch
+    {
+        EstadoEjecucion.Pendiente => "En espera",
+        EstadoEjecucion.Ejecutando => "Generando",
+        EstadoEjecucion.Completada => "Completada",
+        EstadoEjecucion.Fallida => "Fallida",
+        EstadoEjecucion.Cancelada => "Cancelada",
         _ => estado.ToString()
     };
 
