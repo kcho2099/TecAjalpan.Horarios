@@ -83,7 +83,10 @@ internal sealed class FuenteDatosGeneracion(
             }
         }
 
-        return new DatosGeneracion(periodo.Id, unidades);
+        return new DatosGeneracion(
+            periodo.Id,
+            unidades,
+            configuracion.MaximoConsecutivasMateria);
     }
 
     private static Espacio[] EspaciosPermitidos(
@@ -191,6 +194,7 @@ internal sealed class FuenteDatosGeneracion(
                 carga.OfertaMateria.GrupoId,
                 checked((byte)(posicion + 1)),
                 opciones,
+                true,
                 true));
         }
     }
