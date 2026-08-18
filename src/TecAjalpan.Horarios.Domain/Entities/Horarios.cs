@@ -68,6 +68,7 @@ public sealed class SesionHorario : EntidadAuditable
     public Guid GrupoId { get; set; }
     public Guid EspacioId { get; set; }
     public Espacio Espacio { get; set; } = null!;
+    public DateOnly Fecha { get; set; }
     public DiaAcademico Dia { get; set; }
     public byte Bloque { get; set; }
     public byte DuracionBloques { get; set; } = 1;
