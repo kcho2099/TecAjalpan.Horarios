@@ -308,7 +308,7 @@ public sealed class ApplicationDbContext(
             entity.HasIndex(x => new
             {
                 x.HorarioVersionId,
-                x.Dia,
+                x.Fecha,
                 x.Bloque,
                 x.DocenteId
             }).IsUnique();
@@ -316,7 +316,7 @@ public sealed class ApplicationDbContext(
             entity.HasIndex(x => new
             {
                 x.HorarioVersionId,
-                x.Dia,
+                x.Fecha,
                 x.Bloque,
                 x.GrupoId
             }).IsUnique();
@@ -324,7 +324,7 @@ public sealed class ApplicationDbContext(
             entity.HasIndex(x => new
             {
                 x.HorarioVersionId,
-                x.Dia,
+                x.Fecha,
                 x.Bloque,
                 x.EspacioId
             }).IsUnique();
