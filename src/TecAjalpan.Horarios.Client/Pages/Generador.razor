@@ -38,7 +38,8 @@
     {
       <div class="form-field">
         <label for="periodo-generador">Periodo</label>
-        <InputSelect id="periodo-generador" @bind-Value="periodoId">
+        <InputSelect id="periodo-generador" @bind-Value="periodoId"
+                     @bind-Value:after="OnPeriodoChanged">
           <option value="@Guid.Empty">Selecciona un periodo</option>
           @foreach (var periodo in periodos)
           {
@@ -66,7 +67,7 @@
   </article>
 
   <article class="panel generador-resultado">
-    @if (resultado is null)
+    @if (resultado is null && versionActual is null)
     {
       <div class="empty-state compact">
         <div class="empty-icon">⌁</div>
@@ -78,22 +79,30 @@
     {
       <div class="panel-title">
         <div>
-          <span class="eyebrow">Versión @resultado.NumeroVersion</span>
-          <h2>@(resultado.Completa ? "Propuesta completa" : "Propuesta parcial")</h2>
+          <span class="eyebrow">Versión @NumeroVersion</span>
+          <h2>@(Completa ? "Propuesta completa" : "Propuesta parcial")</h2>
         </div>
-        <span class="status @(resultado.Completa ? "status-active" : "status-draft")">
-          @(resultado.Completa ? "Sin pendientes" : $"{resultado.Pendientes.Count} pendiente(s)")
+        <span class="status @(Completa ? "status-active" : "status-draft")">
+          @(Completa ? "Sin pendientes" : $"{NumeroPendientes} pendiente(s)")
         </span>
       </div>
 
       <div class="generador-metricas">
-        <div><span>Horas solicitadas</span><strong>@resultado.HorasSolicitadas</strong></div>
-        <div><span>Horas programadas</span><strong>@resultado.HorasProgramadas</strong></div>
-        <div><span>Sesiones fechadas</span><strong>@resultado.SesionesGeneradas</strong></div>
+        <div><span>Horas solicitadas</span><strong>@HorasSolicitadas</strong></div>
+        <div><span>Horas programadas</span><strong>@HorasProgramadas</strong></div>
+        <div><span>Sesiones fechadas</span><strong>@SesionesGeneradas</strong></div>
         <div><span>Cobertura</span><strong>@Cobertura.ToString("0.#")%</strong></div>
       </div>
 
-      @if (resultado.Pendientes.Count > 0)
+      <div class="generador-acciones">
+        <a class="btn-primary" href="@($"/horario/{HorarioVersionId}")">Ver horario generado</a>
+        @if (versionActual is not null)
+        {
+          <small>Guardado @versionActual.FechaCreacion.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @versionActual.EstadoTexto</small>
+        }
+      </div>
+
+      @if (resultado is not null && resultado.Pendientes.Count > 0)
       {
         <div class="generador-pendientes">
           <h3>Elementos que requieren ajuste</h3>
@@ -104,6 +113,21 @@
               <strong>@pendiente.Horas h</strong>
               <p>@pendiente.Detalle</p>
             </div>
+          }
+        </div>
+      }
+
+
+      @if (versiones.Count > 1)
+      {
+        <div class="generador-versiones">
+          <h3>Versiones recientes</h3>
+          @foreach (var version in versiones.Skip(1))
+          {
+            <a href="@($"/horario/{version.Id}")">
+              <span>Versión @version.Numero · @version.EstadoTexto</span>
+              <small>@version.FechaCreacion.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</small>
+            </a>
           }
         </div>
       }
@@ -120,11 +144,20 @@
   private string? error;
   private string? mensaje;
   private ResultadoGeneracionDto? resultado;
+  private List<HorarioVersionResumenDto> versiones = [];
+  private HorarioVersionResumenDto? versionActual => versiones.FirstOrDefault();
 
   private bool NoPuedeGenerar => generando || periodoId == Guid.Empty;
-  private decimal Cobertura => resultado is null || resultado.HorasSolicitadas == 0
+  private Guid HorarioVersionId => resultado?.HorarioVersionId ?? versionActual?.Id ?? Guid.Empty;
+  private int NumeroVersion => resultado?.NumeroVersion ?? versionActual?.Numero ?? 0;
+  private bool Completa => resultado?.Completa ?? versionActual?.Completa ?? false;
+  private int HorasSolicitadas => resultado?.HorasSolicitadas ?? versionActual?.HorasSolicitadas ?? 0;
+  private int HorasProgramadas => resultado?.HorasProgramadas ?? versionActual?.HorasProgramadas ?? 0;
+  private int SesionesGeneradas => resultado?.SesionesGeneradas ?? versionActual?.SesionesGeneradas ?? 0;
+  private int NumeroPendientes => resultado?.Pendientes.Count ?? versionActual?.NumeroPendientes ?? 0;
+  private decimal Cobertura => HorasSolicitadas == 0
     ? 0
-    : decimal.Divide(resultado.HorasProgramadas * 100, resultado.HorasSolicitadas);
+    : decimal.Divide(HorasProgramadas * 100, HorasSolicitadas);
 
   protected override async Task OnInitializedAsync()
   {
@@ -134,6 +167,7 @@
       periodoId = periodos.FirstOrDefault(x => x.Estado == 2)?.Id
         ?? periodos.FirstOrDefault()?.Id
         ?? Guid.Empty;
+      await CargarVersiones();
     }
     catch (Exception ex)
     {
@@ -143,6 +177,20 @@
     {
       cargando = false;
     }
+  }
+
+  private async Task OnPeriodoChanged()
+  {
+    resultado = null;
+    mensaje = null;
+    await CargarVersiones();
+  }
+
+  private async Task CargarVersiones()
+  {
+    versiones = periodoId == Guid.Empty
+      ? []
+      : (await HorariosApi.ListarVersionesAsync(periodoId)).ToList();
   }
 
   private async Task Generar()
@@ -166,6 +214,7 @@
       }
 
       resultado = respuesta.Resultado;
+      await CargarVersiones();
       mensaje = resultado.Completa
         ? $"La versión {resultado.NumeroVersion} se guardó completa en borrador."
         : $"La versión {resultado.NumeroVersion} se guardó con pendientes para revisión.";
