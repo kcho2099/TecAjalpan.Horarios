@@ -56,6 +56,29 @@ public sealed class HorariosApi(HttpClient httpClient)
             null);
     }
 
+    public async Task<ResultadoOperacionHorario> DescartarAsync(
+        Guid versionId,
+        CancellationToken cancellationToken = default)
+    {
+        var antiforgery = await httpClient.GetFromJsonAsync<AntiforgeryDto>(
+            "api/seguridad/antiforgery",
+            cancellationToken);
+        using var message = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"api/horarios/versiones/{versionId}/descartar");
+        message.Headers.TryAddWithoutValidation(
+            "X-XSRF-TOKEN",
+            antiforgery?.Token ?? throw new InvalidOperationException(
+                "No fue posible obtener el token antifalsificación."));
+
+        using var response = await httpClient.SendAsync(message, cancellationToken);
+        return response.IsSuccessStatusCode
+            ? new ResultadoOperacionHorario(true, null)
+            : new ResultadoOperacionHorario(
+                false,
+                await LeerMensajeAsync(response, cancellationToken));
+    }
+
     private static async Task<string> LeerMensajeAsync(
         HttpResponseMessage response,
         CancellationToken cancellationToken)
@@ -89,3 +112,7 @@ public sealed record ResultadoPeticionGeneracion(
     bool Correcto,
     string? Mensaje,
     ResultadoGeneracionDto? Resultado);
+
+public sealed record ResultadoOperacionHorario(
+    bool Correcto,
+    string? Mensaje);
