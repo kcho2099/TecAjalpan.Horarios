@@ -181,6 +181,23 @@
   </div>
 }
 
+@if (Ocupado)
+{
+  <div class="loading-overlay" role="status" aria-live="polite" aria-busy="true">
+    <div class="loading-card generador-loading-card">
+      <span class="loading-spinner"></span>
+      <strong>@TextoCarga</strong>
+      <small>@DetalleCarga</small>
+      @if (generando)
+      {
+        <span class="loading-hint">
+          Tiempo máximo configurado: @TiempoLimiteTexto. No cierres esta ventana.
+        </span>
+      }
+    </div>
+  </div>
+}
+
 @code {
   private List<PeriodoGeneracionDto> periodos = [];
   private Guid periodoId;
@@ -195,6 +212,22 @@
   private List<HorarioVersionResumenDto> versiones = [];
   private HorarioVersionResumenDto? versionActual => versiones.FirstOrDefault();
 
+  private bool Ocupado => cargando || generando || descartando;
+  private string TextoCarga => generando
+    ? "Generando y compactando el horario…"
+    : descartando
+      ? "Descartando la versión…"
+      : "Cargando el generador de horarios…";
+  private string DetalleCarga => generando
+    ? "Revisando disponibilidad, cruces de docentes, grupos, aulas compartidas y espacios libres."
+    : descartando
+      ? "Actualizando las versiones disponibles."
+      : "Consultando periodos y propuestas guardadas.";
+  private string TiempoLimiteTexto => tiempoLimiteSegundos < 60
+    ? $"{tiempoLimiteSegundos} segundos"
+    : tiempoLimiteSegundos == 60
+      ? "1 minuto"
+      : $"{tiempoLimiteSegundos / 60d:0.#} minutos";
   private bool NoPuedeGenerar => generando || periodoId == Guid.Empty;
   private Guid HorarioVersionId => resultado?.HorarioVersionId ?? versionActual?.Id ?? Guid.Empty;
   private int NumeroVersion => resultado?.NumeroVersion ?? versionActual?.Numero ?? 0;
@@ -229,9 +262,23 @@
 
   private async Task OnPeriodoChanged()
   {
+    cargando = true;
     resultado = null;
     mensaje = null;
-    await CargarVersiones();
+    error = null;
+    await Task.Yield();
+    try
+    {
+      await CargarVersiones();
+    }
+    catch (Exception ex)
+    {
+      error = ex.Message;
+    }
+    finally
+    {
+      cargando = false;
+    }
   }
 
   private async Task CargarVersiones()
@@ -250,6 +297,7 @@
     error = null;
     mensaje = null;
     resultado = null;
+    await Task.Yield();
     try
     {
       var respuesta = await HorariosApi.GenerarAsync(new GenerarHorarioRequest(
