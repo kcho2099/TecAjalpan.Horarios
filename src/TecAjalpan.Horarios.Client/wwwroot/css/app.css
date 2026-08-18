@@ -2416,6 +2416,28 @@ main {
   line-height: 1.5;
 }
 
+.generador-tiempo-ayuda {
+  display: grid;
+  gap: 4px;
+  margin-top: 7px;
+  color: var(--gris);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.generador-tiempo-ayuda strong {
+  color: var(--tinta);
+}
+
+.generador-tiempo-ayuda b {
+  color: var(--vino);
+}
+
+.generador-tiempo-ayuda small {
+  color: var(--gris);
+  font-size: 11px;
+}
+
 .generador-boton {
   width: 100%;
   justify-content: center;
@@ -2708,9 +2730,9 @@ main {
 
 .horario-calendario {
   display: grid;
-  grid-template-columns: 72px repeat(6, minmax(175px, 1fr));
-  grid-template-rows: 48px repeat(8, minmax(92px, auto));
-  min-width: 1160px;
+  grid-template-columns: 78px repeat(6, minmax(195px, 1fr));
+  grid-template-rows: 52px repeat(8, minmax(104px, auto));
+  min-width: 1280px;
   background: #f3f0ef;
   gap: 1px;
 }
@@ -2762,7 +2784,7 @@ main {
 }
 
 .horario-celda {
-  min-height: 92px;
+  min-height: 104px;
 }
 
 .horario-bloque {
@@ -2805,13 +2827,13 @@ main {
 }
 
 .horario-evento strong {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .horario-evento span,
 .horario-evento small {
   color: #6b5759;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .horario-evento .horario-evento-dato {
