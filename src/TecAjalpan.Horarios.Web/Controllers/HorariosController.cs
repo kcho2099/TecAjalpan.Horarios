@@ -4,6 +4,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using TecAjalpan.Horarios.Application.Abstractions;
 using TecAjalpan.Horarios.Application.Security;
+using TecAjalpan.Horarios.Contracts.Horarios;
 using TecAjalpan.Horarios.Domain.Entities;
 using TecAjalpan.Horarios.Domain.Enums;
 using TecAjalpan.Horarios.Infrastructure.Persistence;
@@ -147,22 +148,3 @@ public sealed class HorariosController(
                 x.Detalle)).ToArray()));
     }
 }
-
-public sealed record GenerarHorarioRequest(
-    Guid PeriodoId,
-    int TiempoLimiteSegundos = 60);
-
-public sealed record ResultadoGeneracionDto(
-    Guid HorarioVersionId,
-    int NumeroVersion,
-    bool Completa,
-    int HorasSolicitadas,
-    int HorasProgramadas,
-    int SesionesGeneradas,
-    IReadOnlyCollection<PendienteGeneracionDto> Pendientes);
-
-public sealed record PendienteGeneracionDto(
-    Guid CargaAcademicaId,
-    byte Horas,
-    string Codigo,
-    string Detalle);
