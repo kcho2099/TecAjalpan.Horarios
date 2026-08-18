@@ -652,9 +652,6 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
                     b.Property<Guid>("EspacioId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<DateOnly>("Fecha")
-                        .HasColumnType("date");
-
                     b.Property<DateTime>("FechaCrea")
                         .HasColumnType("datetime2");
 
@@ -1919,6 +1916,9 @@ namespace TecAjalpan.Horarios.Infrastructure.Migrations
 
                     b.Property<Guid>("EspacioId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("Fecha")
+                        .HasColumnType("date");
 
                     b.Property<DateTime>("FechaCrea")
                         .HasColumnType("datetime2");
