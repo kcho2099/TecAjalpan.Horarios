@@ -9,7 +9,7 @@
   <div>
     <span class="eyebrow">Revisión de propuesta</span>
     <h1>Horario generado</h1>
-    <p>Consulta la versión guardada y filtra por carrera, modalidad o grupo.</p>
+    <p>Consulta la propuesta como calendario semanal. Elige un grupo o un docente para revisar sus clases y detectar espacios o cruces.</p>
   </div>
   @if (detalle is not null)
   {
@@ -24,58 +24,72 @@
   <div class="alerta-error">@error</div>
 }
 
-<article class="panel horario-toolbar">
-  <div class="form-field">
-    <label for="horario-periodo">Periodo</label>
-    <InputSelect id="horario-periodo" @bind-Value="periodoId"
-                 @bind-Value:after="OnPeriodoChanged">
-      <option value="@Guid.Empty">Selecciona un periodo</option>
-      @foreach (var periodo in periodos)
-      {
-        <option value="@periodo.Id">@periodo.Nombre</option>
-      }
-    </InputSelect>
+<article class="panel horario-filtros">
+  <div class="horario-filtros-principales">
+    <div class="form-field horario-filtro-periodo">
+      <label for="horario-periodo">Periodo</label>
+      <InputSelect id="horario-periodo" @bind-Value="periodoId" @bind-Value:after="OnPeriodoChanged">
+        <option value="@Guid.Empty">Selecciona un periodo</option>
+        @foreach (var periodo in periodos)
+        {
+          <option value="@periodo.Id">@periodo.Nombre</option>
+        }
+      </InputSelect>
+    </div>
+    <div class="form-field horario-filtro-version">
+      <label for="horario-version">Versión</label>
+      <InputSelect id="horario-version" @bind-Value="versionIdSeleccionada" @bind-Value:after="OnVersionChanged">
+        <option value="@Guid.Empty">Sin versiones</option>
+        @foreach (var version in versiones)
+        {
+          <option value="@version.Id">Versión @version.Numero · @version.EstadoTexto</option>
+        }
+      </InputSelect>
+    </div>
   </div>
-  <div class="form-field">
-    <label for="horario-version">Versión</label>
-    <InputSelect id="horario-version" @bind-Value="versionIdSeleccionada"
-                 @bind-Value:after="OnVersionChanged">
-      <option value="@Guid.Empty">Sin versiones guardadas</option>
-      @foreach (var version in versiones)
-      {
-        <option value="@version.Id">Versión @version.Numero · @version.EstadoTexto</option>
-      }
-    </InputSelect>
-  </div>
-  <div class="form-field">
-    <label for="horario-carrera">Carrera</label>
-    <select id="horario-carrera" @bind="carreraId">
-      <option value="@Guid.Empty">Todas las carreras</option>
-      @foreach (var carrera in Carreras)
-      {
-        <option value="@carrera.Id">@carrera.Nombre</option>
-      }
-    </select>
-  </div>
-  <div class="form-field">
-    <label for="horario-modalidad">Modalidad</label>
-    <select id="horario-modalidad" @bind="modalidadId">
-      <option value="@Guid.Empty">Todas las modalidades</option>
-      @foreach (var modalidad in Modalidades)
-      {
-        <option value="@modalidad.Id">@modalidad.Nombre</option>
-      }
-    </select>
-  </div>
-  <div class="form-field">
-    <label for="horario-grupo">Grupo</label>
-    <select id="horario-grupo" @bind="grupoId">
-      <option value="@Guid.Empty">Todos los grupos</option>
-      @foreach (var grupo in Grupos)
-      {
-        <option value="@grupo.Id">@grupo.Nombre</option>
-      }
-    </select>
+
+  <div class="horario-filtros-vista">
+    <div class="form-field">
+      <label for="horario-carrera">Carrera</label>
+      <select id="horario-carrera" @bind="carreraId" @bind:after="OnCarreraChanged">
+        <option value="@Guid.Empty">Todas</option>
+        @foreach (var carrera in Carreras)
+        {
+          <option value="@carrera.Id">@carrera.Nombre</option>
+        }
+      </select>
+    </div>
+    <div class="form-field">
+      <label for="horario-modalidad">Modalidad</label>
+      <select id="horario-modalidad" @bind="modalidadId" @bind:after="OnModalidadChanged">
+        <option value="@Guid.Empty">Todas</option>
+        @foreach (var modalidad in Modalidades)
+        {
+          <option value="@modalidad.Id">@modalidad.Nombre</option>
+        }
+      </select>
+    </div>
+    <div class="form-field horario-filtro-enfoque">
+      <label for="horario-grupo">Ver horario del grupo</label>
+      <select id="horario-grupo" @bind="grupoId" @bind:after="OnGrupoChanged">
+        <option value="@Guid.Empty">Selecciona un grupo</option>
+        @foreach (var grupo in Grupos)
+        {
+          <option value="@grupo.Id">@grupo.Nombre</option>
+        }
+      </select>
+    </div>
+    <div class="horario-separador-filtro"><span>o</span></div>
+    <div class="form-field horario-filtro-enfoque">
+      <label for="horario-docente">Ver horario del docente</label>
+      <select id="horario-docente" @bind="docenteId" @bind:after="OnDocenteChanged">
+        <option value="@Guid.Empty">Selecciona un docente</option>
+        @foreach (var docente in Docentes)
+        {
+          <option value="@docente.Id">@docente.Nombre</option>
+        }
+      </select>
+    </div>
   </div>
 </article>
 
@@ -91,55 +105,101 @@ else if (detalle is null)
     <p>Genera una propuesta para este periodo y aquí podrás revisarla.</p>
   </article>
 }
+else if (grupoId == Guid.Empty && docenteId == Guid.Empty)
+{
+  <article class="panel empty-state compact">
+    <div class="empty-icon">▦</div>
+    <h2>Selecciona qué horario quieres revisar</h2>
+    <p>Elige un grupo o un docente en los filtros para abrir su calendario semanal.</p>
+  </article>
+}
 else
 {
-  <div class="horario-resumen">
-    <div><span>Periodo</span><strong>@detalle.Periodo</strong></div>
-    <div><span>Registros visibles</span><strong>@SesionesFiltradas.Length</strong></div>
-    <div><span>Sesiones fechadas</span><strong>@SesionesFiltradas.Sum(x => x.NumeroSesiones)</strong></div>
-    <div><span>Origen</span><strong>@detalle.Origen</strong></div>
-  </div>
+  <section class="horario-contexto">
+    <div>
+      <span class="eyebrow">Vista semanal</span>
+      <h2>@TituloVista</h2>
+      <p>@SubtituloVista</p>
+    </div>
+    <div class="horario-indicadores">
+      <span><strong>@MateriasVisibles</strong> materias</span>
+      <span><strong>@HorasVisibles</strong> bloques visibles</span>
+      <span><strong>@SesionesFechadas</strong> sesiones fechadas</span>
+    </div>
+  </section>
 
-  <article class="panel horario-tabla">
-    <div class="panel-title">
-      <div>
-        <span class="eyebrow">Distribución semanal</span>
-        <h2>Clases programadas</h2>
+  @if (BloquesVisuales.Count == 0)
+  {
+    <article class="panel empty-state compact">
+      <div class="empty-icon">⌁</div>
+      <h2>Sin clases con estos filtros</h2>
+      <p>Cambia la carrera, modalidad, grupo o docente para consultar otra distribución.</p>
+    </article>
+  }
+  else
+  {
+    <article class="panel horario-calendario-panel">
+      <div class="horario-leyenda">
+        <span><i class="horario-leyenda-color"></i> Cada tarjeta representa una materia</span>
+        <span>Las fechas indican su vigencia real dentro del periodo</span>
       </div>
-      <span class="record-count">@SesionesFiltradas.Length registro(s)</span>
-    </div>
-    <div class="table-responsive">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Carrera / grupo</th>
-            <th>Día y hora</th>
-            <th>Materia</th>
-            <th>Docente</th>
-            <th>Aula</th>
-            <th>Vigencia</th>
-          </tr>
-        </thead>
-        <tbody>
-          @foreach (var sesion in SesionesFiltradas)
+      <div class="horario-calendario-scroll">
+        <div class="horario-calendario">
+          <div class="horario-esquina">Hora</div>
+          @foreach (var dia in Dias)
           {
-            <tr>
-              <td><strong>@sesion.Grupo</strong><small>@sesion.Carrera · @sesion.Modalidad</small></td>
-              <td><strong>@sesion.DiaTexto</strong><small>@sesion.HoraInicio–@sesion.HoraFin</small></td>
-              <td><strong>@sesion.Materia</strong><small>@sesion.MateriaClave</small></td>
-              <td>@sesion.Docente</td>
-              <td>@sesion.Espacio</td>
-              <td><strong>@sesion.FechaInicio.ToString("dd/MM/yyyy")–@sesion.FechaFin.ToString("dd/MM/yyyy")</strong><small>@sesion.NumeroSesiones fecha(s)</small></td>
-            </tr>
+            <div class="horario-dia" style="grid-column:@(dia.Id + 1);grid-row:1">@dia.Nombre</div>
           }
-        </tbody>
-      </table>
-    </div>
-  </article>
+
+          @for (var bloque = 1; bloque <= 8; bloque++)
+          {
+            <div class="horario-hora" style="grid-column:1;grid-row:@(bloque + 1)">
+              <strong>@HoraInicio(bloque)</strong>
+              <small>@HoraInicio(bloque + 1)</small>
+            </div>
+            @for (var dia = 1; dia <= 6; dia++)
+            {
+              <div class="horario-celda" style="grid-column:@(dia + 1);grid-row:@(bloque + 1)"></div>
+            }
+          }
+
+          @foreach (var bloque in BloquesVisuales)
+          {
+            <div class="horario-bloque" style="@EstiloBloque(bloque)">
+              <div class="horario-bloque-hora">@HoraInicio(bloque.BloqueInicio)–@HoraInicio(bloque.BloqueInicio + bloque.Duracion)</div>
+              @foreach (var evento in bloque.Eventos)
+              {
+                <div class="horario-evento @ClaseColor(evento.MateriaClave)">
+                  <strong>@evento.Materia</strong>
+                  <span>@evento.MateriaClave</span>
+                  @if (docenteId == Guid.Empty)
+                  {
+                    <span class="horario-evento-dato">@evento.Docente</span>
+                  }
+                  else
+                  {
+                    <span class="horario-evento-dato">Grupo @evento.Grupo · @evento.Carrera · @evento.Modalidad</span>
+                  }
+                  <span class="horario-evento-dato">@evento.Espacio</span>
+                  <small>@evento.FechaInicio.ToString("dd/MM/yyyy")–@evento.FechaFin.ToString("dd/MM/yyyy")</small>
+                </div>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    </article>
+  }
 }
 
 @code {
   [Parameter] public Guid? VersionId { get; set; }
+
+  private static readonly OpcionDia[] Dias =
+  [
+    new(1, "Lunes"), new(2, "Martes"), new(3, "Miércoles"),
+    new(4, "Jueves"), new(5, "Viernes"), new(6, "Sábado")
+  ];
 
   private List<PeriodoGeneracionDto> periodos = [];
   private List<HorarioVersionResumenDto> versiones = [];
@@ -149,6 +209,7 @@ else
   private Guid carreraId;
   private Guid modalidadId;
   private Guid grupoId;
+  private Guid docenteId;
   private bool cargando = true;
   private string? error;
 
@@ -156,7 +217,21 @@ else
     .Where(x => carreraId == Guid.Empty || x.CarreraId == carreraId)
     .Where(x => modalidadId == Guid.Empty || x.ModalidadId == modalidadId)
     .Where(x => grupoId == Guid.Empty || x.GrupoId == grupoId)
+    .Where(x => docenteId == Guid.Empty || x.DocenteId == docenteId)
     .ToArray() ?? [];
+
+  private List<BloqueHorario> BloquesVisuales => ConstruirBloques(SesionesFiltradas);
+  private int MateriasVisibles => SesionesFiltradas.Select(x => x.CargaAcademicaId).Distinct().Count();
+  private int HorasVisibles => SesionesFiltradas.Length;
+  private int SesionesFechadas => SesionesFiltradas.Sum(x => x.NumeroSesiones);
+  private string TituloVista => docenteId != Guid.Empty
+    ? Docentes.FirstOrDefault(x => x.Id == docenteId)?.Nombre ?? "Docente"
+    : $"Grupo {Grupos.FirstOrDefault(x => x.Id == grupoId)?.Nombre}";
+  private string SubtituloVista => docenteId != Guid.Empty
+    ? "Clases del docente en todas las carreras y grupos seleccionados."
+    : SesionesFiltradas.FirstOrDefault() is { } sesion
+      ? $"{sesion.Carrera} · {sesion.Modalidad}"
+      : "Distribución de clases del grupo seleccionado.";
 
   private OpcionFiltro[] Carreras => detalle?.Sesiones
     .Select(x => new OpcionFiltro(x.CarreraId, x.Carrera)).Distinct()
@@ -171,6 +246,12 @@ else
     .Where(x => carreraId == Guid.Empty || x.CarreraId == carreraId)
     .Where(x => modalidadId == Guid.Empty || x.ModalidadId == modalidadId)
     .Select(x => new OpcionFiltro(x.GrupoId, x.Grupo)).Distinct()
+    .OrderBy(x => x.Nombre).ToArray() ?? [];
+
+  private OpcionFiltro[] Docentes => detalle?.Sesiones
+    .Where(x => carreraId == Guid.Empty || x.CarreraId == carreraId)
+    .Where(x => modalidadId == Guid.Empty || x.ModalidadId == modalidadId)
+    .Select(x => new OpcionFiltro(x.DocenteId, x.Docente)).Distinct()
     .OrderBy(x => x.Nombre).ToArray() ?? [];
 
   protected override async Task OnInitializedAsync()
@@ -194,6 +275,8 @@ else
           ?? Guid.Empty;
         await CargarVersionesYUltima();
       }
+
+      SeleccionarPrimerGrupo();
     }
     catch (Exception ex)
     {
@@ -209,6 +292,7 @@ else
   {
     LimpiarFiltros();
     await CargarVersionesYUltima();
+    SeleccionarPrimerGrupo();
   }
 
   private async Task OnVersionChanged()
@@ -218,6 +302,38 @@ else
       detalle = null;
     else
       await CargarDetalle(versionIdSeleccionada);
+    SeleccionarPrimerGrupo();
+  }
+
+  private Task OnCarreraChanged()
+  {
+    modalidadId = Guid.Empty;
+    grupoId = Guid.Empty;
+    docenteId = Guid.Empty;
+    SeleccionarPrimerGrupo();
+    return Task.CompletedTask;
+  }
+
+  private Task OnModalidadChanged()
+  {
+    grupoId = Guid.Empty;
+    docenteId = Guid.Empty;
+    SeleccionarPrimerGrupo();
+    return Task.CompletedTask;
+  }
+
+  private Task OnGrupoChanged()
+  {
+    if (grupoId != Guid.Empty)
+      docenteId = Guid.Empty;
+    return Task.CompletedTask;
+  }
+
+  private Task OnDocenteChanged()
+  {
+    if (docenteId != Guid.Empty)
+      grupoId = Guid.Empty;
+    return Task.CompletedTask;
   }
 
   private async Task CargarVersionesYUltima()
@@ -238,12 +354,103 @@ else
     versionIdSeleccionada = detalle?.Id ?? Guid.Empty;
   }
 
+  private void SeleccionarPrimerGrupo()
+  {
+    if (grupoId == Guid.Empty && docenteId == Guid.Empty)
+      grupoId = Grupos.FirstOrDefault()?.Id ?? Guid.Empty;
+  }
+
   private void LimpiarFiltros()
   {
     carreraId = Guid.Empty;
     modalidadId = Guid.Empty;
     grupoId = Guid.Empty;
+    docenteId = Guid.Empty;
+  }
+
+  private static List<BloqueHorario> ConstruirBloques(HorarioSesionResumenDto[] sesiones)
+  {
+    var eventos = new List<EventoHorario>();
+    var grupos = sesiones.GroupBy(x => new
+    {
+      x.CargaAcademicaId, x.Dia, x.MateriaClave, x.Materia, x.DocenteId,
+      x.Docente, x.GrupoId, x.Grupo, x.Carrera, x.Modalidad, x.Espacio,
+      x.FechaInicio, x.FechaFin, x.NumeroSesiones
+    });
+
+    foreach (var grupo in grupos)
+    {
+      var bloques = grupo.Select(x => (int)x.Bloque).Distinct().OrderBy(x => x).ToArray();
+      if (bloques.Length == 0)
+        continue;
+
+      var inicio = bloques[0];
+      var anterior = inicio;
+      foreach (var bloque in bloques.Skip(1))
+      {
+        if (bloque == anterior + 1)
+        {
+          anterior = bloque;
+          continue;
+        }
+
+        eventos.Add(new EventoHorario(
+          grupo.Key.Dia, inicio, anterior - inicio + 1,
+          grupo.Key.MateriaClave, grupo.Key.Materia, grupo.Key.Docente,
+          grupo.Key.Grupo, grupo.Key.Carrera, grupo.Key.Modalidad, grupo.Key.Espacio,
+          grupo.Key.FechaInicio, grupo.Key.FechaFin));
+        inicio = bloque;
+        anterior = bloque;
+      }
+
+      eventos.Add(new EventoHorario(
+        grupo.Key.Dia, inicio, anterior - inicio + 1,
+        grupo.Key.MateriaClave, grupo.Key.Materia, grupo.Key.Docente,
+        grupo.Key.Grupo, grupo.Key.Carrera, grupo.Key.Modalidad, grupo.Key.Espacio,
+        grupo.Key.FechaInicio, grupo.Key.FechaFin));
+    }
+
+    return eventos
+      .GroupBy(x => new { x.Dia, x.BloqueInicio, x.Duracion })
+      .Select(x => new BloqueHorario(
+        x.Key.Dia,
+        x.Key.BloqueInicio,
+        x.Key.Duracion,
+        x.OrderBy(y => y.FechaInicio).ThenBy(y => y.Materia).ToArray()))
+      .OrderBy(x => x.Dia)
+      .ThenBy(x => x.BloqueInicio)
+      .ToList();
+  }
+
+  private static string EstiloBloque(BloqueHorario bloque) =>
+    $"grid-column:{bloque.Dia + 1};grid-row:{bloque.BloqueInicio + 1} / span {bloque.Duracion}";
+
+  private static string HoraInicio(int bloque) => $"{Math.Clamp(7 + bloque, 0, 23):00}:00";
+
+  private static string ClaseColor(string clave)
+  {
+    var indice = clave.Aggregate(0, (total, caracter) => total + caracter) % 6;
+    return $"horario-color-{indice + 1}";
   }
 
   private sealed record OpcionFiltro(Guid Id, string Nombre);
+  private sealed record OpcionDia(byte Id, string Nombre);
+  private sealed record EventoHorario(
+    byte Dia,
+    int BloqueInicio,
+    int Duracion,
+    string MateriaClave,
+    string Materia,
+    string Docente,
+    string Grupo,
+    string Carrera,
+    string Modalidad,
+    string Espacio,
+    DateOnly FechaInicio,
+    DateOnly FechaFin);
+  private sealed record BloqueHorario(
+    byte Dia,
+    int BloqueInicio,
+    int Duracion,
+    EventoHorario[] Eventos);
 }
