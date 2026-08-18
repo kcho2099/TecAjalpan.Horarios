@@ -12,6 +12,8 @@ public sealed class GeneradorHorariosCpSat(
     {
         var datos = await fuenteDatos.CargarAsync(solicitud, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
+        var sesionesFijas = datos.SesionesFijas ?? [];
+        ValidarSesionesFijas(sesionesFijas);
 
         var modelo = new CpModel();
         var decisiones = new List<Decision>();
@@ -65,7 +67,7 @@ public sealed class GeneradorHorariosCpSat(
         var seleccionadas = solucionDisponible
             ? decisiones.Where(x => solver.BooleanValue(x.Variable)).ToArray()
             : [];
-        var sesiones = seleccionadas
+        var sesionesGeneradas = seleccionadas
             .SelectMany(x => x.Opcion.Fechas.Select(fecha => new SesionPropuesta(
                 x.Unidad.CargaAcademicaId,
                 x.Unidad.DocenteId,
@@ -74,6 +76,9 @@ public sealed class GeneradorHorariosCpSat(
                 fecha,
                 x.Opcion.Dia,
                 x.Opcion.Bloque)))
+            .ToArray();
+        var sesiones = sesionesGeneradas
+            .Concat(sesionesFijas.Select(x => x.Sesion))
             .OrderBy(x => x.Fecha)
             .ThenBy(x => x.Bloque)
             .ThenBy(x => x.GrupoId)
@@ -109,14 +114,85 @@ public sealed class GeneradorHorariosCpSat(
             .Cast<PendientePropuesto>()
             .ToArray();
 
-        var horasSolicitadas = datos.Unidades.Count;
-        var horasProgramadas = seleccionadas.Length;
+        var horasFijas = sesionesFijas
+            .Select(x => new
+            {
+                x.Sesion.CargaAcademicaId,
+                x.Sesion.Dia,
+                x.Sesion.Bloque
+            })
+            .Distinct()
+            .Count();
+        var horasSolicitadas = datos.Unidades.Count + horasFijas;
+        var horasProgramadas = seleccionadas.Length + horasFijas;
         return new ResultadoGeneracion(
             solucionDisponible && horasProgramadas == horasSolicitadas,
             horasSolicitadas,
             horasProgramadas,
             sesiones,
             pendientes);
+    }
+
+    private static void ValidarSesionesFijas(
+        IReadOnlyCollection<SesionFijaGeneracion> sesiones)
+    {
+        var cruceDocente = sesiones
+            .GroupBy(x => new
+            {
+                x.Sesion.Fecha,
+                x.Sesion.Bloque,
+                x.Sesion.DocenteId
+            })
+            .FirstOrDefault(x => x
+                .Select(y => y.Sesion.CargaAcademicaId)
+                .Distinct()
+                .Count() > 1);
+        if (cruceDocente is not null)
+        {
+            var asignaciones = cruceDocente.Select(x => x.Materia).Distinct();
+            throw new DatosGeneracionInvalidosException(
+                $"Conflicto sabatino fijo: {cruceDocente.First().Docente} tiene "
+                + $"{string.Join(" y ", asignaciones)} el {cruceDocente.Key.Fecha:dd/MM/yyyy} "
+                + $"en el bloque {cruceDocente.Key.Bloque}.");
+        }
+
+        var cruceGrupo = sesiones
+            .GroupBy(x => new
+            {
+                x.Sesion.Fecha,
+                x.Sesion.Bloque,
+                x.Sesion.GrupoId
+            })
+            .FirstOrDefault(x => x
+                .Select(y => y.Sesion.CargaAcademicaId)
+                .Distinct()
+                .Count() > 1);
+        if (cruceGrupo is not null)
+        {
+            throw new DatosGeneracionInvalidosException(
+                $"Conflicto sabatino fijo: el grupo {cruceGrupo.First().Grupo} tiene más de una materia "
+                + $"el {cruceGrupo.Key.Fecha:dd/MM/yyyy} en el bloque {cruceGrupo.Key.Bloque}.");
+        }
+
+        var cruceEspacio = sesiones
+            .GroupBy(x => new
+            {
+                x.Sesion.Fecha,
+                x.Sesion.Bloque,
+                x.Sesion.EspacioId
+            })
+            .FirstOrDefault(x => x
+                .Select(y => y.Sesion.CargaAcademicaId)
+                .Distinct()
+                .Count() > 1);
+        if (cruceEspacio is not null)
+        {
+            var grupos = cruceEspacio.Select(x => x.Grupo).Distinct();
+            throw new DatosGeneracionInvalidosException(
+                $"Conflicto sabatino fijo: el aula {cruceEspacio.First().Espacio} está asignada a "
+                + $"los grupos {string.Join(" y ", grupos)} el {cruceEspacio.Key.Fecha:dd/MM/yyyy} "
+                + $"en el bloque {cruceEspacio.Key.Bloque}.");
+        }
     }
 
     private static void AgregarRestriccionesDeCruce(
