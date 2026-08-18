@@ -215,6 +215,73 @@ public sealed class HorariosController(
         if (version is null)
             return NotFound("No se encontró la versión de horario solicitada.");
 
+        var filas = await ConsultarFilasExportacionAsync(
+            versionId,
+            carreraId,
+            modalidadId,
+            grupoId,
+            docenteId,
+            cancellationToken);
+
+        var archivo = ExportadorHorarioExcel.Crear(
+            version.Periodo, version.Numero, filas);
+        return File(
+            archivo,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"horario-{version.Numero}-{DateTime.UtcNow:yyyyMMddHHmm}.xlsx");
+    }
+
+    [HttpGet("versiones/{versionId:guid}/pdf")]
+    public async Task<IActionResult> ExportarPdf(
+        Guid versionId,
+        [FromQuery] Guid? carreraId,
+        [FromQuery] Guid? modalidadId,
+        [FromQuery] Guid? grupoId,
+        [FromQuery] Guid? docenteId,
+        CancellationToken cancellationToken)
+    {
+        var version = await dbContext.HorariosVersiones.AsNoTracking()
+            .Where(x => x.Id == versionId && x.Estado != EstadoHorario.Descartado)
+            .Select(x => new
+            {
+                Periodo = x.Periodo.Nombre,
+                x.Numero,
+                x.Estado,
+                Pendientes = x.Pendientes.Count
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (version is null)
+            return NotFound("No se encontró la versión de horario solicitada.");
+
+        var filas = await ConsultarFilasExportacionAsync(
+            versionId,
+            carreraId,
+            modalidadId,
+            grupoId,
+            docenteId,
+            cancellationToken);
+        var archivo = ExportadorHorarioPdf.Crear(
+            version.Periodo,
+            version.Numero,
+            TextoEstado(version.Estado),
+            version.Pendientes,
+            filas,
+            grupoId,
+            docenteId);
+        return File(
+            archivo,
+            "application/pdf",
+            $"horario-borrador-v{version.Numero}-{DateTime.UtcNow:yyyyMMddHHmm}.pdf");
+    }
+
+    private async Task<HorarioSesionResumenDto[]> ConsultarFilasExportacionAsync(
+        Guid versionId,
+        Guid? carreraId,
+        Guid? modalidadId,
+        Guid? grupoId,
+        Guid? docenteId,
+        CancellationToken cancellationToken)
+    {
         var consulta = dbContext.SesionesHorario.AsNoTracking()
             .Where(x => x.HorarioVersionId == versionId);
         if (carreraId.HasValue)
@@ -253,7 +320,7 @@ public sealed class HorariosController(
                 x.Fecha
             })
             .ToArrayAsync(cancellationToken);
-        var filas = sesiones
+        return sesiones
             .GroupBy(x => new
             {
                 x.CargaAcademicaId,
@@ -299,13 +366,6 @@ public sealed class HorariosController(
             .ThenBy(x => x.Dia)
             .ThenBy(x => x.Bloque)
             .ToArray();
-
-        var archivo = ExportadorHorarioExcel.Crear(
-            version.Periodo, version.Numero, filas);
-        return File(
-            archivo,
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            $"horario-{version.Numero}-{DateTime.UtcNow:yyyyMMddHHmm}.xlsx");
     }
 
     [HttpPost("generar")]

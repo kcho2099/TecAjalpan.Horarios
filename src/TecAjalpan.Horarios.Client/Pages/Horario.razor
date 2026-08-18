@@ -15,6 +15,9 @@
   @if (detalle is not null)
   {
     <div class="horario-heading-acciones">
+      <a class="btn-exportar-horario btn-exportar-pdf" href="@UrlExportarPdf" download>
+        <span aria-hidden="true">▦</span> Exportar PDF
+      </a>
       <a class="btn-exportar-horario" href="@UrlExportarExcel" download>
         <span aria-hidden="true">⇩</span> Exportar Excel
       </a>
@@ -276,26 +279,29 @@ else
     ? "Actualizando las versiones disponibles."
     : "Cargando las sesiones y construyendo la cuadrícula.";
   private string UrlExportarExcel
-  {
-    get
-    {
-      if (detalle is null)
-        return "#";
+    => UrlExportacion("excel");
 
-      var filtros = new List<string>();
-      if (carreraId != Guid.Empty)
-        filtros.Add($"carreraId={carreraId}");
-      if (modalidadId != Guid.Empty)
-        filtros.Add($"modalidadId={modalidadId}");
-      if (grupoId != Guid.Empty)
-        filtros.Add($"grupoId={grupoId}");
-      if (docenteId != Guid.Empty)
-        filtros.Add($"docenteId={docenteId}");
-      var consulta = filtros.Count == 0
-        ? string.Empty
-        : "?" + string.Join("&", filtros);
-      return $"api/horarios/versiones/{detalle.Id}/excel{consulta}";
-    }
+  private string UrlExportarPdf
+    => UrlExportacion("pdf");
+
+  private string UrlExportacion(string formato)
+  {
+    if (detalle is null)
+      return "#";
+
+    var filtros = new List<string>();
+    if (carreraId != Guid.Empty)
+      filtros.Add($"carreraId={carreraId}");
+    if (modalidadId != Guid.Empty)
+      filtros.Add($"modalidadId={modalidadId}");
+    if (grupoId != Guid.Empty)
+      filtros.Add($"grupoId={grupoId}");
+    if (docenteId != Guid.Empty)
+      filtros.Add($"docenteId={docenteId}");
+    var consulta = filtros.Count == 0
+      ? string.Empty
+      : "?" + string.Join("&", filtros);
+    return $"api/horarios/versiones/{detalle.Id}/{formato}{consulta}";
   }
   private HorarioSesionResumenDto[] SesionesFiltradas => detalle?.Sesiones
     .Where(x => carreraId == Guid.Empty || x.CarreraId == carreraId)

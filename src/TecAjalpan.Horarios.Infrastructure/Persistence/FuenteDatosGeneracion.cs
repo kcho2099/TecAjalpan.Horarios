@@ -152,7 +152,8 @@ internal sealed class FuenteDatosGeneracion(
                 carga.DocenteId,
                 carga.OfertaMateria.GrupoId,
                 numero,
-                opciones));
+                opciones,
+                Creditos: carga.OfertaMateria.Materia.Creditos));
         }
     }
 

@@ -2652,6 +2652,18 @@ main {
   line-height: 1;
 }
 
+.btn-exportar-pdf {
+  border-color: #c99a9b;
+  color: #822427;
+  background: #fbf2f2;
+}
+
+.btn-exportar-pdf:hover {
+  border-color: #9f5557;
+  color: #681b1e;
+  background: #f6e5e5;
+}
+
 .horario-filtros {
   display: grid;
   gap: 16px;

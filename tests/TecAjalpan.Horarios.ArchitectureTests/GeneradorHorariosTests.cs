@@ -123,6 +123,119 @@ public sealed class GeneradorHorariosTests
     }
 
     [Fact]
+    public async Task MateriaDeCincoCreditosRequiereAlMenosUnBloqueDoble()
+    {
+        var periodoId = Guid.NewGuid();
+        var cargaId = Guid.NewGuid();
+        var docenteId = Guid.NewGuid();
+        var grupoId = Guid.NewGuid();
+        var espacioId = Guid.NewGuid();
+        var opciones = new[]
+        {
+            new OpcionGeneracion(espacioId, 1, 1, false, [new DateOnly(2026, 8, 24)]),
+            new OpcionGeneracion(espacioId, 1, 2, false, [new DateOnly(2026, 8, 24)]),
+            new OpcionGeneracion(espacioId, 2, 1, false, [new DateOnly(2026, 8, 25)]),
+            new OpcionGeneracion(espacioId, 2, 3, false, [new DateOnly(2026, 8, 25)]),
+            new OpcionGeneracion(espacioId, 3, 1, false, [new DateOnly(2026, 8, 26)])
+        };
+        var unidades = Enumerable.Range(1, 5)
+            .Select(x => new UnidadGenerable(
+                cargaId,
+                docenteId,
+                grupoId,
+                checked((byte)x),
+                opciones,
+                Creditos: 5))
+            .ToArray();
+        var generador = new GeneradorHorariosCpSat(
+            new FuenteFalsa(new DatosGeneracion(periodoId, unidades, 2)));
+
+        var resultado = await generador.GenerarAsync(
+            new SolicitudGeneracion(periodoId, null, 10, false),
+            CancellationToken.None);
+
+        Assert.True(resultado.Completa);
+        Assert.Equal(5, resultado.HorasProgramadas);
+        Assert.Contains(
+            resultado.Sesiones.GroupBy(x => x.Dia),
+            dia => dia.Select(x => (int)x.Bloque).Distinct().Any(
+                bloque => dia.Any(x => x.Bloque == bloque + 1)));
+    }
+
+    [Fact]
+    public async Task MateriaDeCincoCreditosSinBloquesConsecutivosQuedaPendiente()
+    {
+        var periodoId = Guid.NewGuid();
+        var cargaId = Guid.NewGuid();
+        var espacioId = Guid.NewGuid();
+        var opciones = new[]
+        {
+            new OpcionGeneracion(espacioId, 1, 1, false, [new DateOnly(2026, 8, 24)]),
+            new OpcionGeneracion(espacioId, 1, 3, false, [new DateOnly(2026, 8, 24)]),
+            new OpcionGeneracion(espacioId, 2, 1, false, [new DateOnly(2026, 8, 25)]),
+            new OpcionGeneracion(espacioId, 2, 3, false, [new DateOnly(2026, 8, 25)])
+        };
+        var unidades = Enumerable.Range(1, 4)
+            .Select(x => new UnidadGenerable(
+                cargaId,
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                checked((byte)x),
+                opciones,
+                Creditos: 5))
+            .ToArray();
+        var generador = new GeneradorHorariosCpSat(
+            new FuenteFalsa(new DatosGeneracion(periodoId, unidades, 2)));
+
+        var resultado = await generador.GenerarAsync(
+            new SolicitudGeneracion(periodoId, null, 10, false),
+            CancellationToken.None);
+
+        Assert.False(resultado.Completa);
+        Assert.Equal(0, resultado.HorasProgramadas);
+        Assert.Single(resultado.Pendientes);
+    }
+
+    [Fact]
+    public async Task MateriaDeCincoCreditosPuedeTenerDosBloquesDobles()
+    {
+        var periodoId = Guid.NewGuid();
+        var cargaId = Guid.NewGuid();
+        var docenteId = Guid.NewGuid();
+        var grupoId = Guid.NewGuid();
+        var espacioId = Guid.NewGuid();
+        var opciones = new[]
+        {
+            new OpcionGeneracion(espacioId, 1, 1, false, [new DateOnly(2026, 8, 24)]),
+            new OpcionGeneracion(espacioId, 1, 2, false, [new DateOnly(2026, 8, 24)]),
+            new OpcionGeneracion(espacioId, 2, 1, false, [new DateOnly(2026, 8, 25)]),
+            new OpcionGeneracion(espacioId, 2, 2, false, [new DateOnly(2026, 8, 25)])
+        };
+        var unidades = Enumerable.Range(1, 4)
+            .Select(x => new UnidadGenerable(
+                cargaId,
+                docenteId,
+                grupoId,
+                checked((byte)x),
+                opciones,
+                Creditos: 5))
+            .ToArray();
+        var generador = new GeneradorHorariosCpSat(
+            new FuenteFalsa(new DatosGeneracion(periodoId, unidades, 2)));
+
+        var resultado = await generador.GenerarAsync(
+            new SolicitudGeneracion(periodoId, null, 10, false),
+            CancellationToken.None);
+
+        Assert.True(resultado.Completa);
+        Assert.Equal(4, resultado.HorasProgramadas);
+        Assert.Equal(2, resultado.Sesiones.GroupBy(x => x.Dia).Count());
+        Assert.All(
+            resultado.Sesiones.GroupBy(x => x.Dia),
+            dia => Assert.Equal(2, dia.Count()));
+    }
+
+    [Fact]
     public async Task PrefiereHorarioCompactoSinHuecosParaGrupoYDocente()
     {
         var periodoId = Guid.NewGuid();

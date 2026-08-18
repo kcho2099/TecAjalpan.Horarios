@@ -30,7 +30,8 @@ public sealed record UnidadGenerable(
     byte Numero,
     IReadOnlyCollection<OpcionGeneracion> Opciones,
     bool MantenerMismoEspacio = false,
-    bool EsSabatina = false);
+    bool EsSabatina = false,
+    byte Creditos = 0);
 
 public sealed record OpcionGeneracion(
     Guid EspacioId,

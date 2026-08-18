@@ -39,6 +39,7 @@ public sealed class GeneradorHorariosCpSat(
             modelo,
             decisiones,
             datos.MaximoConsecutivasMateria);
+        AgregarBloqueDobleObligatorio(modelo, decisiones);
         AgregarContinuidadDeEspacio(modelo, datos.Unidades, decisiones);
 
         if (decisiones.Count > 0)
@@ -309,6 +310,68 @@ public sealed class GeneradorHorariosCpSat(
                         modelo.Add(LinearExpr.Sum(variables) <= maximo);
                 }
             }
+        }
+    }
+
+    private static void AgregarBloqueDobleObligatorio(
+        CpModel modelo,
+        IReadOnlyCollection<Decision> decisiones)
+    {
+        foreach (var carga in decisiones
+                     .Where(x => !x.Unidad.EsSabatina && x.Unidad.Creditos >= 5)
+                     .GroupBy(x => x.Unidad.CargaAcademicaId))
+        {
+            var ocupaciones = new Dictionary<(byte Dia, byte Bloque), BoolVar>();
+            foreach (var bloque in carga.GroupBy(x => new
+                     {
+                         x.Opcion.Dia,
+                         x.Opcion.Bloque
+                     }))
+            {
+                var ocupada = modelo.NewBoolVar(
+                    $"materia_{carga.Key:N}_{bloque.Key.Dia}_{bloque.Key.Bloque}");
+                var variables = bloque.Select(x => x.Variable).Distinct().ToArray();
+                foreach (var variable in variables)
+                    modelo.Add(ocupada >= variable);
+                modelo.Add(ocupada <= LinearExpr.Sum(variables));
+                ocupaciones.Add((bloque.Key.Dia, bloque.Key.Bloque), ocupada);
+            }
+
+            var algunaHora = CrearDisyuncion(
+                modelo,
+                ocupaciones.Values,
+                $"materia_programada_{carga.Key:N}");
+            var parejas = new List<BoolVar>();
+            foreach (var dia in ocupaciones.Keys.Select(x => x.Dia).Distinct())
+            {
+                var bloques = ocupaciones.Keys
+                    .Where(x => x.Dia == dia)
+                    .Select(x => x.Bloque)
+                    .OrderBy(x => x)
+                    .ToArray();
+                foreach (var bloque in bloques.Where(x => x < byte.MaxValue))
+                {
+                    if (!ocupaciones.TryGetValue(
+                            (dia, checked((byte)(bloque + 1))),
+                            out var siguiente))
+                    {
+                        continue;
+                    }
+
+                    var actual = ocupaciones[(dia, bloque)];
+                    var pareja = modelo.NewBoolVar(
+                        $"doble_{carga.Key:N}_{dia}_{bloque}");
+                    modelo.Add(pareja <= actual);
+                    modelo.Add(pareja <= siguiente);
+                    modelo.Add(pareja >= actual + siguiente - 1);
+                    parejas.Add(pareja);
+                }
+            }
+
+            if (parejas.Count == 0)
+                modelo.Add(algunaHora == 0);
+            else
+                modelo.Add(LinearExpr.Sum(parejas) >= algunaHora);
         }
     }
 
