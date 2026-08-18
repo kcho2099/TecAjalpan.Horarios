@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Globalization;
 using System.Text;
 using System.Xml;
 using TecAjalpan.Horarios.Contracts.Horarios;
@@ -87,7 +88,7 @@ internal static class ExportadorHorarioExcel
                 sesion.Docente,
                 sesion.Espacio,
                 $"{sesion.FechaInicio:dd/MM/yyyy}–{sesion.FechaFin:dd/MM/yyyy}",
-                sesion.NumeroSesiones.ToString()
+                sesion.NumeroSesiones.ToString(CultureInfo.InvariantCulture)
             ], 0);
             fila++;
         }
@@ -112,9 +113,9 @@ internal static class ExportadorHorarioExcel
         for (var indice = 0; indice < anchos.Length; indice++)
         {
             writer.WriteStartElement("col", ns);
-            writer.WriteAttributeString("min", (indice + 1).ToString());
-            writer.WriteAttributeString("max", (indice + 1).ToString());
-            writer.WriteAttributeString("width", anchos[indice].ToString("0.##", System.Globalization.CultureInfo.InvariantCulture));
+            writer.WriteAttributeString("min", (indice + 1).ToString(CultureInfo.InvariantCulture));
+            writer.WriteAttributeString("max", (indice + 1).ToString(CultureInfo.InvariantCulture));
+            writer.WriteAttributeString("width", anchos[indice].ToString("0.##", CultureInfo.InvariantCulture));
             writer.WriteAttributeString("customWidth", "1");
             writer.WriteEndElement();
         }
@@ -129,12 +130,12 @@ internal static class ExportadorHorarioExcel
         int estilo)
     {
         writer.WriteStartElement("row", ns);
-        writer.WriteAttributeString("r", numero.ToString());
+        writer.WriteAttributeString("r", numero.ToString(CultureInfo.InvariantCulture));
         for (var indice = 0; indice < valores.Length; indice++)
         {
             writer.WriteStartElement("c", ns);
             writer.WriteAttributeString("r", $"{NombreColumna(indice + 1)}{numero}");
-            writer.WriteAttributeString("s", estilo.ToString());
+            writer.WriteAttributeString("s", estilo.ToString(CultureInfo.InvariantCulture));
             writer.WriteAttributeString("t", "inlineStr");
             writer.WriteStartElement("is", ns);
             writer.WriteElementString("t", ns, valores[indice] ?? string.Empty);
