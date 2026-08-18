@@ -123,6 +123,47 @@ public sealed class GeneradorHorariosTests
     }
 
     [Fact]
+    public async Task PrefiereHorarioCompactoSinHuecosParaGrupoYDocente()
+    {
+        var periodoId = Guid.NewGuid();
+        var docenteId = Guid.NewGuid();
+        var grupoId = Guid.NewGuid();
+        var espacioId = Guid.NewGuid();
+        var fecha = new DateOnly(2026, 8, 24);
+        var opciones = Enumerable.Range(1, 8)
+            .Select(x => new OpcionGeneracion(
+                espacioId,
+                1,
+                checked((byte)x),
+                false,
+                [fecha]))
+            .ToArray();
+        var unidades = Enumerable.Range(1, 3)
+            .Select(x => new UnidadGenerable(
+                Guid.NewGuid(),
+                docenteId,
+                grupoId,
+                1,
+                opciones))
+            .ToArray();
+        var generador = new GeneradorHorariosCpSat(
+            new FuenteFalsa(new DatosGeneracion(periodoId, unidades, 2)));
+
+        var resultado = await generador.GenerarAsync(
+            new SolicitudGeneracion(periodoId, null, 10, false),
+            CancellationToken.None);
+
+        Assert.True(resultado.Completa);
+        var bloques = resultado.Sesiones
+            .Select(x => (int)x.Bloque)
+            .OrderBy(x => x)
+            .ToArray();
+        Assert.Equal(3, bloques.Length);
+        Assert.Equal(bloques[0] + 1, bloques[1]);
+        Assert.Equal(bloques[1] + 1, bloques[2]);
+    }
+
+    [Fact]
     public async Task IntegraModuloSabatinoComoSesionesFijasSinOptimizarlo()
     {
         var periodoId = Guid.NewGuid();
