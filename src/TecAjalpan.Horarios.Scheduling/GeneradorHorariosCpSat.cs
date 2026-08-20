@@ -512,7 +512,9 @@ public sealed class GeneradorHorariosCpSat(
                 modelo.Add(ocupado <= LinearExpr.Sum(variables));
             }
 
-            for (var bloque = primerBloque + 1; bloque < ultimoBloque; bloque++)
+            // La penúltima hora ya no se penaliza cuando existe clase en la última.
+            // Se conservan las preferencias de compactación para los demás huecos.
+            for (var bloque = primerBloque + 1; bloque < ultimoBloque - 1; bloque++)
             {
                 var hayClaseAntes = CrearDisyuncion(
                     modelo,

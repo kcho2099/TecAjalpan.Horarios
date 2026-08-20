@@ -402,6 +402,45 @@ public sealed class GeneradorHorariosTests
     }
 
     [Fact]
+    public async Task NoPenalizaPenultimaHoraLibreAntesDeLaUltima()
+    {
+        var periodoId = Guid.NewGuid();
+        var grupoId = Guid.NewGuid();
+        var espacioId = Guid.NewGuid();
+        var fecha = new DateOnly(2026, 8, 24);
+        var cargaFlexibleId = Guid.NewGuid();
+        var unidades = new[]
+        {
+            new UnidadGenerable(
+                cargaFlexibleId,
+                Guid.NewGuid(),
+                grupoId,
+                1,
+                [
+                    new OpcionGeneracion(espacioId, 1, 6, true, [fecha]),
+                    new OpcionGeneracion(espacioId, 1, 7, false, [fecha])
+                ]),
+            new UnidadGenerable(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                grupoId,
+                1,
+                [new OpcionGeneracion(espacioId, 1, 8, false, [fecha])])
+        };
+        var generador = new GeneradorHorariosCpSat(
+            new FuenteFalsa(new DatosGeneracion(periodoId, unidades, 2)));
+
+        var resultado = await generador.GenerarAsync(
+            new SolicitudGeneracion(periodoId, null, 10, false),
+            CancellationToken.None);
+
+        Assert.True(resultado.Completa);
+        Assert.Contains(
+            resultado.Sesiones,
+            x => x.CargaAcademicaId == cargaFlexibleId && x.Bloque == 6);
+    }
+
+    [Fact]
     public async Task IntegraModuloSabatinoComoSesionesFijasSinOptimizarlo()
     {
         var periodoId = Guid.NewGuid();
