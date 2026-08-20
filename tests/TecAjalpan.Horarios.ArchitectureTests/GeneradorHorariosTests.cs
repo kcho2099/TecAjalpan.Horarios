@@ -200,6 +200,50 @@ public sealed class GeneradorHorariosTests
     }
 
     [Fact]
+    public async Task PriorizaCoberturaCompletaAntesQueUnaOpcionPreferente()
+    {
+        var periodoId = Guid.NewGuid();
+        var grupoId = Guid.NewGuid();
+        var espacioId = Guid.NewGuid();
+        var fecha = new DateOnly(2026, 8, 24);
+        var cargaFlexibleId = Guid.NewGuid();
+        var cargaRestringidaId = Guid.NewGuid();
+        var unidades = new[]
+        {
+            new UnidadGenerable(
+                cargaFlexibleId,
+                Guid.NewGuid(),
+                grupoId,
+                1,
+                [
+                    new OpcionGeneracion(espacioId, 1, 1, true, [fecha]),
+                    new OpcionGeneracion(espacioId, 1, 2, false, [fecha])
+                ]),
+            new UnidadGenerable(
+                cargaRestringidaId,
+                Guid.NewGuid(),
+                grupoId,
+                1,
+                [new OpcionGeneracion(espacioId, 1, 1, false, [fecha])])
+        };
+        var generador = new GeneradorHorariosCpSat(
+            new FuenteFalsa(new DatosGeneracion(periodoId, unidades, 2)));
+
+        var resultado = await generador.GenerarAsync(
+            new SolicitudGeneracion(periodoId, null, 10, false),
+            CancellationToken.None);
+
+        Assert.True(resultado.Completa);
+        Assert.Equal(2, resultado.HorasProgramadas);
+        Assert.Contains(
+            resultado.Sesiones,
+            x => x.CargaAcademicaId == cargaFlexibleId && x.Bloque == 2);
+        Assert.Contains(
+            resultado.Sesiones,
+            x => x.CargaAcademicaId == cargaRestringidaId && x.Bloque == 1);
+    }
+
+    [Fact]
     public async Task MateriaDeCincoCreditosRequiereAlMenosUnBloqueDoble()
     {
         var periodoId = Guid.NewGuid();

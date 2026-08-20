@@ -44,60 +44,47 @@ public sealed class GeneradorHorariosCpSat(
         AgregarContinuidadDeEspacio(modelo, datos.Unidades, decisiones);
 
         if (decisiones.Count > 0)
+            modelo.Maximize(LinearExpr.Sum(decisiones.Select(x => x.Variable)));
+
+        var tiempoLimite = Math.Clamp(solicitud.TiempoLimiteSegundos, 1, 600);
+        var cronometro = System.Diagnostics.Stopwatch.StartNew();
+        var solverCobertura = CrearSolver(tiempoLimite);
+        var estadoCobertura = solverCobertura.Solve(modelo);
+        var solucionCoberturaDisponible =
+            estadoCobertura is CpSolverStatus.Feasible or CpSolverStatus.Optimal;
+        var programadasCobertura = solucionCoberturaDisponible
+            ? decisiones.Count(x => solverCobertura.BooleanValue(x.Variable))
+            : 0;
+        var coberturaMaximaDemostrada = estadoCobertura == CpSolverStatus.Optimal
+            || programadasCobertura == datos.Unidades.Count;
+
+        var solverSeleccionado = solverCobertura;
+        var estadoSeleccionado = estadoCobertura;
+        var segundosRestantes = tiempoLimite
+            - (int)Math.Ceiling(cronometro.Elapsed.TotalSeconds);
+        if (decisiones.Count > 0
+            && solucionCoberturaDisponible
+            && coberturaMaximaDemostrada
+            && segundosRestantes >= 1)
         {
-            var huecosGrupo = AgregarPenalizacionDeHuecos(
-                modelo,
-                decisiones,
-                x => x.Unidad.GrupoId,
-                "grupo");
-            var huecosDocente = AgregarPenalizacionDeHuecos(
-                modelo,
-                decisiones,
-                x => x.Unidad.DocenteId,
-                "docente");
-            var continuidadesDocenteGrupo =
-                AgregarPenalizacionContinuidadDocenteGrupo(modelo, decisiones);
+            modelo.Add(
+                LinearExpr.Sum(decisiones.Select(x => x.Variable))
+                == programadasCobertura);
+            AgregarObjetivoCalidad(modelo, decisiones);
 
-            const long pesoHuecoGrupo = 12L;
-            const long pesoHuecoDocente = 10L;
-            const long pesoContinuidadDocenteGrupo = 14L;
-            const long pesoPreferencia = 1L;
-            var penalizacionSecundariaMaxima =
-                (huecosGrupo.Count * pesoHuecoGrupo)
-                + (huecosDocente.Count * pesoHuecoDocente)
-                + (continuidadesDocenteGrupo.Count * pesoContinuidadDocenteGrupo)
-                + (decisiones.Count * pesoPreferencia);
-            var pesoProgramacion = penalizacionSecundariaMaxima + 1L;
-            var objetivo = LinearExpr.NewBuilder();
-            foreach (var decision in decisiones)
+            var solverCalidad = CrearSolver(segundosRestantes);
+            var estadoCalidad = solverCalidad.Solve(modelo);
+            if (estadoCalidad is CpSolverStatus.Feasible or CpSolverStatus.Optimal)
             {
-                objetivo.AddTerm(
-                    decision.Variable,
-                    pesoProgramacion
-                    + (decision.Opcion.Preferente ? pesoPreferencia : 0L));
+                solverSeleccionado = solverCalidad;
+                estadoSeleccionado = estadoCalidad;
             }
-
-            foreach (var hueco in huecosGrupo)
-                objetivo.AddTerm(hueco, -pesoHuecoGrupo);
-            foreach (var hueco in huecosDocente)
-                objetivo.AddTerm(hueco, -pesoHuecoDocente);
-            foreach (var continuidad in continuidadesDocenteGrupo)
-                objetivo.AddTerm(continuidad, -pesoContinuidadDocenteGrupo);
-
-            modelo.Maximize(objetivo);
         }
 
-        var solver = new CpSolver
-        {
-            StringParameters =
-                $"max_time_in_seconds:{Math.Clamp(solicitud.TiempoLimiteSegundos, 1, 600)} "
-                + "num_search_workers:8"
-        };
-        var estado = solver.Solve(modelo);
-        var solucionDisponible = estado is CpSolverStatus.Feasible or CpSolverStatus.Optimal;
-
+        var solucionDisponible =
+            estadoSeleccionado is CpSolverStatus.Feasible or CpSolverStatus.Optimal;
         var seleccionadas = solucionDisponible
-            ? decisiones.Where(x => solver.BooleanValue(x.Variable)).ToArray()
+            ? decisiones.Where(x => solverSeleccionado.BooleanValue(x.Variable)).ToArray()
             : [];
         var sesionesGeneradas = seleccionadas
             .SelectMany(x => x.Opcion.Fechas.Select(fecha => new SesionPropuesta(
@@ -130,7 +117,7 @@ public sealed class GeneradorHorariosCpSat(
                     return null;
 
                 var sinOpciones = x.Count(unidad => unidad.Opciones.Count == 0);
-                var busquedaConcluida = estado == CpSolverStatus.Optimal;
+                var busquedaConcluida = coberturaMaximaDemostrada;
                 var codigo = sinOpciones > 0
                     ? "SIN_CANDIDATOS"
                     : busquedaConcluida
@@ -169,6 +156,47 @@ public sealed class GeneradorHorariosCpSat(
             horasProgramadas,
             sesiones,
             pendientes);
+    }
+
+    private static CpSolver CrearSolver(int tiempoLimiteSegundos) => new()
+    {
+        StringParameters =
+            $"max_time_in_seconds:{Math.Max(1, tiempoLimiteSegundos)} "
+            + "num_search_workers:8"
+    };
+
+    private static void AgregarObjetivoCalidad(
+        CpModel modelo,
+        List<Decision> decisiones)
+    {
+        var huecosGrupo = AgregarPenalizacionDeHuecos(
+            modelo,
+            decisiones,
+            x => x.Unidad.GrupoId,
+            "grupo");
+        var huecosDocente = AgregarPenalizacionDeHuecos(
+            modelo,
+            decisiones,
+            x => x.Unidad.DocenteId,
+            "docente");
+        var continuidadesDocenteGrupo =
+            AgregarPenalizacionContinuidadDocenteGrupo(modelo, decisiones);
+
+        const long pesoHuecoGrupo = 12L;
+        const long pesoHuecoDocente = 10L;
+        const long pesoContinuidadDocenteGrupo = 14L;
+        const long pesoPreferencia = 1L;
+        var objetivo = LinearExpr.NewBuilder();
+        foreach (var decision in decisiones.Where(x => x.Opcion.Preferente))
+            objetivo.AddTerm(decision.Variable, pesoPreferencia);
+        foreach (var hueco in huecosGrupo)
+            objetivo.AddTerm(hueco, -pesoHuecoGrupo);
+        foreach (var hueco in huecosDocente)
+            objetivo.AddTerm(hueco, -pesoHuecoDocente);
+        foreach (var continuidad in continuidadesDocenteGrupo)
+            objetivo.AddTerm(continuidad, -pesoContinuidadDocenteGrupo);
+
+        modelo.Maximize(objetivo);
     }
 
     private static void ValidarSesionesFijas(
