@@ -130,12 +130,18 @@ public sealed class GeneradorHorariosCpSat(
                     return null;
 
                 var sinOpciones = x.Count(unidad => unidad.Opciones.Count == 0);
+                var busquedaConcluida = estado == CpSolverStatus.Optimal;
                 var codigo = sinOpciones > 0
                     ? "SIN_CANDIDATOS"
-                    : "SIN_CAPACIDAD";
+                    : busquedaConcluida
+                        ? "SIN_CAPACIDAD"
+                        : "LIMITE_DE_BUSQUEDA";
                 var detalle = sinOpciones > 0
                     ? $"{faltantes} h sin disponibilidad compatible de docente o espacio."
-                    : $"{faltantes} h no pudieron acomodarse sin provocar cruces institucionales.";
+                    : busquedaConcluida
+                        ? $"{faltantes} h no pudieron acomodarse respetando disponibilidades y límites académicos."
+                        : $"{faltantes} h no quedaron programadas antes de alcanzar el límite de optimización; "
+                            + "no se ha demostrado que falte capacidad.";
                 return new PendientePropuesto(
                     x.Key,
                     checked((byte)faltantes),
@@ -477,37 +483,56 @@ public sealed class GeneradorHorariosCpSat(
                          x.Opcion.Dia
                      }))
         {
-            var bloques = docenteGrupoDia
-                .Select(x => (int)x.Opcion.Bloque)
+            var ocupaciones = new Dictionary<(Guid CargaId, int Bloque), BoolVar>();
+            foreach (var cargaBloque in docenteGrupoDia.GroupBy(x => new
+                     {
+                         x.Unidad.CargaAcademicaId,
+                         x.Opcion.Bloque
+                     }))
+            {
+                ocupaciones.Add(
+                    (cargaBloque.Key.CargaAcademicaId, cargaBloque.Key.Bloque),
+                    CrearDisyuncion(
+                        modelo,
+                        cargaBloque.Select(x => x.Variable),
+                        $"ocupacion_docente_grupo_materia_"
+                        + $"{docenteGrupoDia.Key.DocenteId:N}_"
+                        + $"{docenteGrupoDia.Key.GrupoId:N}_"
+                        + $"{docenteGrupoDia.Key.Dia}_"
+                        + $"{cargaBloque.Key.CargaAcademicaId:N}_"
+                        + $"{cargaBloque.Key.Bloque}"));
+            }
+
+            var bloques = ocupaciones.Keys
+                .Select(x => x.Bloque)
                 .Distinct()
                 .OrderBy(x => x)
                 .ToArray();
             foreach (var bloque in bloques)
             {
-                var actuales = docenteGrupoDia
-                    .Where(x => x.Opcion.Bloque == bloque)
+                var actuales = ocupaciones
+                    .Where(x => x.Key.Bloque == bloque)
                     .ToArray();
-                var siguientes = docenteGrupoDia
-                    .Where(x => x.Opcion.Bloque == bloque + 1)
+                var siguientes = ocupaciones
+                    .Where(x => x.Key.Bloque == bloque + 1)
                     .ToArray();
 
                 foreach (var actual in actuales)
                 {
                     foreach (var siguiente in siguientes.Where(x =>
-                                 x.Unidad.CargaAcademicaId
-                                 != actual.Unidad.CargaAcademicaId))
+                                 x.Key.CargaId != actual.Key.CargaId))
                     {
                         var continuidad = modelo.NewBoolVar(
                             $"continuidad_docente_grupo_"
                             + $"{docenteGrupoDia.Key.DocenteId:N}_"
                             + $"{docenteGrupoDia.Key.GrupoId:N}_"
                             + $"{docenteGrupoDia.Key.Dia}_{bloque}_"
-                            + $"{actual.Unidad.CargaAcademicaId:N}_"
-                            + $"{siguiente.Unidad.CargaAcademicaId:N}");
-                        modelo.Add(continuidad <= actual.Variable);
-                        modelo.Add(continuidad <= siguiente.Variable);
+                            + $"{actual.Key.CargaId:N}_"
+                            + $"{siguiente.Key.CargaId:N}");
+                        modelo.Add(continuidad <= actual.Value);
+                        modelo.Add(continuidad <= siguiente.Value);
                         modelo.Add(continuidad >=
-                            actual.Variable + siguiente.Variable - 1);
+                            actual.Value + siguiente.Value - 1);
                         continuidades.Add(continuidad);
                     }
                 }

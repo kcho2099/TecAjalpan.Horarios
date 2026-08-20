@@ -162,15 +162,16 @@ public sealed class GeneradorHorariosTests
         var periodoId = Guid.NewGuid();
         var docenteId = Guid.NewGuid();
         var grupoId = Guid.NewGuid();
-        var espacioId = Guid.NewGuid();
+        var espacios = Enumerable.Range(1, 3).Select(_ => Guid.NewGuid()).ToArray();
         var fecha = new DateOnly(2026, 8, 24);
         var opciones = Enumerable.Range(1, 3)
-            .Select(x => new OpcionGeneracion(
-                espacioId,
-                1,
-                checked((byte)x),
-                false,
-                [fecha]))
+            .SelectMany(bloque => espacios.Select(espacioId =>
+                new OpcionGeneracion(
+                    espacioId,
+                    1,
+                    checked((byte)bloque),
+                    false,
+                    [fecha])))
             .ToArray();
         var unidades = new[]
         {
