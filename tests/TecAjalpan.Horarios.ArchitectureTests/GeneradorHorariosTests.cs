@@ -82,7 +82,7 @@ public sealed class GeneradorHorariosTests
     }
 
     [Fact]
-    public async Task ImpideMasDeDosHorasDiariasDeLaMismaMateriaAunqueEstenSeparadas()
+    public async Task MantieneMaximoDiarioDeDosAunqueLaConfiguracionConsecutivaSeaUno()
     {
         var periodoId = Guid.NewGuid();
         var cargaId = Guid.NewGuid();
@@ -107,7 +107,7 @@ public sealed class GeneradorHorariosTests
                 opciones))
             .ToArray();
         var generador = new GeneradorHorariosCpSat(
-            new FuenteFalsa(new DatosGeneracion(periodoId, unidades, 2)));
+            new FuenteFalsa(new DatosGeneracion(periodoId, unidades, 1)));
 
         var resultado = await generador.GenerarAsync(
             new SolicitudGeneracion(periodoId, null, 10, false),
@@ -116,6 +116,9 @@ public sealed class GeneradorHorariosTests
         Assert.Equal(2, resultado.HorasProgramadas);
         var bloques = resultado.Sesiones.Select(x => (int)x.Bloque).OrderBy(x => x).ToArray();
         Assert.Equal(2, bloques.Length);
+        var pendiente = Assert.Single(resultado.Pendientes);
+        Assert.Equal(2, pendiente.Horas);
+        Assert.Contains("máximo 2 h", pendiente.Detalle.ToLowerInvariant());
     }
 
     [Fact]
@@ -314,7 +317,8 @@ public sealed class GeneradorHorariosTests
 
         Assert.False(resultado.Completa);
         Assert.Equal(0, resultado.HorasProgramadas);
-        Assert.Single(resultado.Pendientes);
+        var pendiente = Assert.Single(resultado.Pendientes);
+        Assert.Contains("bloque doble", pendiente.Detalle.ToLowerInvariant());
     }
 
     [Fact]

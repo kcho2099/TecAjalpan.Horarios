@@ -39,6 +39,11 @@
   <div class="alerta-error">@error</div>
 }
 
+@if (detalle is not null && detalle.Pendientes.Count > 0)
+{
+  <DiagnosticoPendientes Pendientes="detalle.Pendientes" />
+}
+
 <article class="panel horario-filtros">
   <div class="horario-filtros-principales">
     <div class="form-field horario-filtro-periodo">

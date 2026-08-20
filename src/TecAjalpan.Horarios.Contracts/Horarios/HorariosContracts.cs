@@ -38,7 +38,16 @@ public sealed record PendienteGeneracionDto(
     Guid CargaAcademicaId,
     byte Horas,
     string Codigo,
-    string Detalle);
+    string Detalle,
+    string MateriaClave,
+    string Materia,
+    string Carrera,
+    string Grupo,
+    string Docente,
+    byte Creditos,
+    byte HorasSolicitadas,
+    byte HorasProgramadas,
+    IReadOnlyCollection<string> ReglasAplicadas);
 
 public sealed record HorarioVersionResumenDto(
     Guid Id,

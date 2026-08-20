@@ -35,10 +35,7 @@ public sealed class GeneradorHorariosCpSat(
         }
 
         AgregarRestriccionesDeCruce(modelo, decisiones);
-        AgregarMaximoDiarioMateria(
-            modelo,
-            decisiones,
-            datos.MaximoConsecutivasMateria);
+        AgregarMaximoDiarioMateria(modelo, decisiones);
         AgregarMaximoDiarioDocenteGrupo(modelo, decisiones);
         AgregarBloqueDobleObligatorio(modelo, decisiones);
         AgregarContinuidadDeEspacio(modelo, datos.Unidades, decisiones);
@@ -118,17 +115,21 @@ public sealed class GeneradorHorariosCpSat(
 
                 var sinOpciones = x.Count(unidad => unidad.Opciones.Count == 0);
                 var busquedaConcluida = coberturaMaximaDemostrada;
+                var resumenCandidatos = ResumirCandidatos(x);
                 var codigo = sinOpciones > 0
                     ? "SIN_CANDIDATOS"
                     : busquedaConcluida
                         ? "SIN_CAPACIDAD"
                         : "LIMITE_DE_BUSQUEDA";
                 var detalle = sinOpciones > 0
-                    ? $"{faltantes} h sin disponibilidad compatible de docente o espacio."
+                    ? $"{faltantes} h sin disponibilidad validada de docente y aula compatible. "
+                        + "Revisa la disponibilidad del docente, el aula base y las aulas compartidas de la carrera."
                     : busquedaConcluida
-                        ? $"{faltantes} h no pudieron acomodarse respetando disponibilidades y límites académicos."
+                        ? $"{faltantes} h no pudieron acomodarse respetando las reglas obligatorias. "
+                            + resumenCandidatos
                         : $"{faltantes} h no quedaron programadas antes de alcanzar el límite de optimización; "
-                            + "no se ha demostrado que falte capacidad.";
+                            + "no se ha demostrado que falte capacidad. "
+                            + resumenCandidatos;
                 return new PendientePropuesto(
                     x.Key,
                     checked((byte)faltantes),
@@ -325,10 +326,9 @@ public sealed class GeneradorHorariosCpSat(
 
     private static void AgregarMaximoDiarioMateria(
         CpModel modelo,
-        IReadOnlyCollection<Decision> decisiones,
-        byte maximoConfigurado)
+        IReadOnlyCollection<Decision> decisiones)
     {
-        var maximo = Math.Clamp((int)maximoConfigurado, 1, 2);
+        const int maximo = 2;
         foreach (var carga in decisiones
                      .Where(x => !x.Unidad.EsSabatina)
                      .GroupBy(x => x.Unidad.CargaAcademicaId))
@@ -368,6 +368,45 @@ public sealed class GeneradorHorariosCpSat(
                 modelo.Add(LinearExpr.Sum(variables) <= maximoDiario);
         }
     }
+
+    private static string ResumirCandidatos(
+        IEnumerable<UnidadGenerable> unidades)
+    {
+        var carga = unidades.ToArray();
+        var opciones = carga
+            .SelectMany(x => x.Opciones)
+            .GroupBy(x => new { x.Dia, x.Bloque, x.EspacioId })
+            .Select(x => x.Key)
+            .ToArray();
+        if (opciones.Length == 0)
+            return string.Empty;
+
+        var dias = opciones
+            .Select(x => x.Dia)
+            .Distinct()
+            .OrderBy(x => x)
+            .Select(TextoDia)
+            .ToArray();
+        var aulas = opciones.Select(x => x.EspacioId).Distinct().Count();
+        var requiereDoble = carga.First().Creditos >= 5
+            ? " La materia requiere al menos un bloque doble por tener 5 o más créditos."
+            : string.Empty;
+        return $"Antes de considerar cruces globales tenía {opciones.Length} combinación(es) "
+            + $"en {string.Join(", ", dias)} y {aulas} aula(s). "
+            + "Se aplican máximo 2 h de la materia al día y máximo 4 h del docente con el grupo al día."
+            + requiereDoble;
+    }
+
+    private static string TextoDia(byte dia) => dia switch
+    {
+        1 => "lunes",
+        2 => "martes",
+        3 => "miércoles",
+        4 => "jueves",
+        5 => "viernes",
+        6 => "sábado",
+        _ => $"día {dia}"
+    };
 
     private static void AgregarBloqueDobleObligatorio(
         CpModel modelo,

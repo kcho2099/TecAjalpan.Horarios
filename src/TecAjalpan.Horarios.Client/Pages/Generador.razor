@@ -55,8 +55,8 @@
                      min="10" max="600" />
         <div class="generador-tiempo-ayuda">
           <strong>60 segundos es el valor recomendado.</strong>
-          <span><b>10</b> termina más rápido, pero explora menos alternativas. <b>600</b> le permite buscar hasta 10 minutos una distribución con menos huecos.</span>
-          <small>Este valor no cambia las horas de clase: solo limita cuánto tiempo puede trabajar el generador y siempre conserva la mejor solución encontrada.</small>
+          <span><b>10</b> termina más rápido, pero puede dejar cobertura parcial. <b>600</b> permite dedicar hasta 10 minutos a completar todas las horas.</span>
+          <small>El generador prioriza primero la cobertura; únicamente después compacta el horario y reduce huecos. Siempre conserva la mejor solución encontrada.</small>
         </div>
       </div>
 
@@ -121,17 +121,7 @@
 
       @if (resultado is not null && resultado.Pendientes.Count > 0)
       {
-        <div class="generador-pendientes">
-          <h3>Elementos que requieren ajuste</h3>
-          @foreach (var pendiente in resultado.Pendientes)
-          {
-            <div class="generador-pendiente">
-              <span>@pendiente.Codigo.Replace('_', ' ')</span>
-              <strong>@pendiente.Horas h</strong>
-              <p>@pendiente.Detalle</p>
-            </div>
-          }
-        </div>
+        <DiagnosticoPendientes Pendientes="resultado.Pendientes" />
       }
 
 

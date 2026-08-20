@@ -177,14 +177,7 @@ public sealed class HorariosController(
             .ThenBy(x => x.Bloque)
             .ToArray();
 
-        var pendientes = await dbContext.PendientesGeneracion.AsNoTracking()
-            .Where(x => x.HorarioVersionId == versionId)
-            .Select(x => new PendienteGeneracionDto(
-                x.CargaAcademicaId,
-                x.HorasPendientes,
-                x.Codigo,
-                x.Detalle))
-            .ToArrayAsync(cancellationToken);
+        var pendientes = await ConsultarPendientesAsync(versionId, cancellationToken);
 
         return Ok(new HorarioDetalleDto(
             version.Id,
@@ -505,14 +498,9 @@ public sealed class HorariosController(
                 .SingleOrDefaultAsync(cancellationToken);
             if (version is not null)
             {
-                var pendientes = await dbContext.PendientesGeneracion.AsNoTracking()
-                    .Where(x => x.HorarioVersionId == version.Id)
-                    .Select(x => new PendienteGeneracionDto(
-                        x.CargaAcademicaId,
-                        x.HorasPendientes,
-                        x.Codigo,
-                        x.Detalle))
-                    .ToArrayAsync(cancellationToken);
+                var pendientes = await ConsultarPendientesAsync(
+                    version.Id,
+                    cancellationToken);
                 resultado = new ResultadoGeneracionDto(
                     version.Id,
                     version.Numero,
@@ -533,6 +521,82 @@ public sealed class HorariosController(
             ejecucion.Inicio,
             ejecucion.Fin,
             resultado);
+    }
+
+    private async Task<PendienteGeneracionDto[]> ConsultarPendientesAsync(
+        Guid versionId,
+        CancellationToken cancellationToken)
+    {
+        var filas = await dbContext.PendientesGeneracion.AsNoTracking()
+            .Where(x => !x.Eliminado && x.HorarioVersionId == versionId)
+            .Select(x => new
+            {
+                x.CargaAcademicaId,
+                Horas = x.HorasPendientes,
+                x.Codigo,
+                x.Detalle,
+                MateriaClave = x.CargaAcademica.OfertaMateria.Materia.Clave,
+                Materia = x.CargaAcademica.OfertaMateria.Materia.Nombre,
+                Carrera = x.CargaAcademica.OfertaMateria.Grupo.PeriodoCarrera.Carrera.Nombre,
+                GrupoClave = x.CargaAcademica.OfertaMateria.Grupo.Clave,
+                Grupo = x.CargaAcademica.OfertaMateria.Grupo.Nombre,
+                DocenteNombres = x.CargaAcademica.Docente.Nombres,
+                DocenteApellidos = x.CargaAcademica.Docente.Apellidos,
+                Creditos = x.CargaAcademica.OfertaMateria.Materia.Creditos,
+                HorasSolicitadas = x.CargaAcademica.OfertaMateria.HorasRequeridas,
+                AulaBaseClave = x.CargaAcademica.OfertaMateria.Grupo.EspacioBase == null
+                    ? null
+                    : x.CargaAcademica.OfertaMateria.Grupo.EspacioBase.Clave,
+                AulaBase = x.CargaAcademica.OfertaMateria.Grupo.EspacioBase == null
+                    ? null
+                    : x.CargaAcademica.OfertaMateria.Grupo.EspacioBase.Nombre
+            })
+            .ToArrayAsync(cancellationToken);
+
+        return filas.Select(x => new PendienteGeneracionDto(
+            x.CargaAcademicaId,
+            x.Horas,
+            x.Codigo,
+            x.Detalle,
+            x.MateriaClave,
+            x.Materia,
+            x.Carrera,
+            $"{x.GrupoClave} · {x.Grupo}",
+            $"{x.DocenteApellidos}, {x.DocenteNombres}",
+            x.Creditos,
+            x.HorasSolicitadas,
+            checked((byte)Math.Max(0, x.HorasSolicitadas - x.Horas)),
+            ConstruirReglasPendiente(
+                x.Creditos,
+                x.AulaBaseClave,
+                x.AulaBase)))
+            .ToArray();
+    }
+
+    private static string[] ConstruirReglasPendiente(
+        byte creditos,
+        string? aulaBaseClave,
+        string? aulaBase)
+    {
+        var reglas = new List<string>
+        {
+            "La carga, la oferta y el grupo deben estar activos; la carga debe estar autorizada.",
+            "Las materias escolarizadas solo se programan de lunes a viernes; el sábado queda reservado para módulos sabatinos.",
+            "El docente debe tener disponibilidad validada para cada bloque candidato.",
+            "Máximo 2 horas de esta materia por día.",
+            "Máximo 4 horas del docente con este grupo por día.",
+            "Sin cruces de docente, grupo ni aula, incluso entre carreras."
+        };
+        if (creditos >= 5)
+        {
+            reglas.Add(
+                "Por tener 5 o más créditos, requiere al menos una sesión doble semanal.");
+        }
+
+        reglas.Add(string.IsNullOrWhiteSpace(aulaBaseClave)
+            ? "Solo puede usar aulas activas, disponibles y permitidas o compartidas con la carrera."
+            : $"El grupo está restringido al aula base activa y disponible {aulaBaseClave} · {aulaBase}.");
+        return reglas.ToArray();
     }
 
     private static string TextoEstado(EstadoHorario estado) => estado switch

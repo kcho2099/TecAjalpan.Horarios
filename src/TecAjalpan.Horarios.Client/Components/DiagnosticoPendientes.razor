@@ -1,0 +1,55 @@
+@if (Pendientes.Count > 0)
+{
+  <section class="generador-pendientes diagnostico-pendientes">
+    <div class="diagnostico-pendientes-titulo">
+      <div>
+        <span class="eyebrow">Diagnóstico de cobertura</span>
+        <h3>Elementos que requieren ajuste</h3>
+      </div>
+      <span class="status status-draft">@Pendientes.Count pendiente(s)</span>
+    </div>
+    <p class="diagnostico-pendientes-intro">
+      Cada tarjeta identifica la carga afectada y las reglas obligatorias consideradas por el generador.
+    </p>
+
+    @foreach (var pendiente in Pendientes)
+    {
+      <article class="generador-pendiente">
+        <header class="generador-pendiente-encabezado">
+          <div class="generador-pendiente-identidad">
+            <span class="generador-pendiente-codigo">@pendiente.Codigo.Replace('_', ' ')</span>
+            <h4>@pendiente.MateriaClave · @pendiente.Materia</h4>
+            <p>@pendiente.Carrera · @pendiente.Grupo</p>
+            <small>Docente: @pendiente.Docente</small>
+          </div>
+          <div class="generador-pendiente-horas">
+            <strong>@pendiente.Horas h</strong>
+            <span>pendiente(s)</span>
+          </div>
+        </header>
+
+        <div class="generador-pendiente-resumen">
+          <span><strong>@pendiente.HorasProgramadas/@pendiente.HorasSolicitadas h</strong> programadas</span>
+          <span><strong>@pendiente.Creditos</strong> créditos</span>
+        </div>
+
+        <p class="generador-pendiente-detalle">@pendiente.Detalle</p>
+        <details class="generador-pendiente-reglas">
+          <summary>Ver reglas aplicadas</summary>
+          <ul>
+            @foreach (var regla in pendiente.ReglasAplicadas)
+            {
+              <li>@regla</li>
+            }
+          </ul>
+          <small class="generador-pendiente-id">Carga académica: @pendiente.CargaAcademicaId</small>
+        </details>
+      </article>
+    }
+  </section>
+}
+
+@code {
+  [Parameter, EditorRequired]
+  public IReadOnlyCollection<PendienteGeneracionDto> Pendientes { get; set; } = [];
+}
