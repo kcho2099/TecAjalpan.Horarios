@@ -35,10 +35,11 @@ public sealed class GeneradorHorariosCpSat(
         }
 
         AgregarRestriccionesDeCruce(modelo, decisiones);
-        AgregarMaximoConsecutivasMateria(
+        AgregarMaximoDiarioMateria(
             modelo,
             decisiones,
             datos.MaximoConsecutivasMateria);
+        AgregarMaximoDiarioDocenteGrupo(modelo, decisiones);
         AgregarBloqueDobleObligatorio(modelo, decisiones);
         AgregarContinuidadDeEspacio(modelo, datos.Unidades, decisiones);
 
@@ -54,13 +55,17 @@ public sealed class GeneradorHorariosCpSat(
                 decisiones,
                 x => x.Unidad.DocenteId,
                 "docente");
+            var continuidadesDocenteGrupo =
+                AgregarPenalizacionContinuidadDocenteGrupo(modelo, decisiones);
 
             const long pesoHuecoGrupo = 12L;
             const long pesoHuecoDocente = 10L;
+            const long pesoContinuidadDocenteGrupo = 14L;
             const long pesoPreferencia = 1L;
             var penalizacionSecundariaMaxima =
                 (huecosGrupo.Count * pesoHuecoGrupo)
                 + (huecosDocente.Count * pesoHuecoDocente)
+                + (continuidadesDocenteGrupo.Count * pesoContinuidadDocenteGrupo)
                 + (decisiones.Count * pesoPreferencia);
             var pesoProgramacion = penalizacionSecundariaMaxima + 1L;
             var objetivo = LinearExpr.NewBuilder();
@@ -76,6 +81,8 @@ public sealed class GeneradorHorariosCpSat(
                 objetivo.AddTerm(hueco, -pesoHuecoGrupo);
             foreach (var hueco in huecosDocente)
                 objetivo.AddTerm(hueco, -pesoHuecoDocente);
+            foreach (var continuidad in continuidadesDocenteGrupo)
+                objetivo.AddTerm(continuidad, -pesoContinuidadDocenteGrupo);
 
             modelo.Maximize(objetivo);
         }
@@ -282,34 +289,49 @@ public sealed class GeneradorHorariosCpSat(
         }
     }
 
-    private static void AgregarMaximoConsecutivasMateria(
+    private static void AgregarMaximoDiarioMateria(
         CpModel modelo,
         IReadOnlyCollection<Decision> decisiones,
         byte maximoConfigurado)
     {
-        var maximo = Math.Max(1, (int)maximoConfigurado);
+        var maximo = Math.Clamp((int)maximoConfigurado, 1, 2);
         foreach (var carga in decisiones
                      .Where(x => !x.Unidad.EsSabatina)
                      .GroupBy(x => x.Unidad.CargaAcademicaId))
         {
             foreach (var dia in carga.Select(x => x.Opcion.Dia).Distinct())
             {
-                var ultimoBloque = carga
+                var variables = carga
                     .Where(x => x.Opcion.Dia == dia)
-                    .Max(x => (int?)x.Opcion.Bloque) ?? 0;
-                for (var inicio = 1; inicio + maximo <= ultimoBloque; inicio++)
-                {
-                    var fin = inicio + maximo;
-                    var variables = carga
-                        .Where(x => x.Opcion.Dia == dia
-                            && x.Opcion.Bloque >= inicio
-                            && x.Opcion.Bloque <= fin)
-                        .Select(x => x.Variable)
-                        .ToArray();
-                    if (variables.Length > maximo)
-                        modelo.Add(LinearExpr.Sum(variables) <= maximo);
-                }
+                    .Select(x => x.Variable)
+                    .Distinct()
+                    .ToArray();
+                if (variables.Length > maximo)
+                    modelo.Add(LinearExpr.Sum(variables) <= maximo);
             }
+        }
+    }
+
+    private static void AgregarMaximoDiarioDocenteGrupo(
+        CpModel modelo,
+        IReadOnlyCollection<Decision> decisiones)
+    {
+        const int maximoDiario = 4;
+        foreach (var docenteGrupoDia in decisiones
+                     .Where(x => !x.Unidad.EsSabatina)
+                     .GroupBy(x => new
+                     {
+                         x.Unidad.DocenteId,
+                         x.Unidad.GrupoId,
+                         x.Opcion.Dia
+                     }))
+        {
+            var variables = docenteGrupoDia
+                .Select(x => x.Variable)
+                .Distinct()
+                .ToArray();
+            if (variables.Length > maximoDiario)
+                modelo.Add(LinearExpr.Sum(variables) <= maximoDiario);
         }
     }
 
@@ -439,6 +461,60 @@ public sealed class GeneradorHorariosCpSat(
         }
 
         return huecos;
+    }
+
+    private static List<BoolVar> AgregarPenalizacionContinuidadDocenteGrupo(
+        CpModel modelo,
+        IReadOnlyCollection<Decision> decisiones)
+    {
+        var continuidades = new List<BoolVar>();
+        foreach (var docenteGrupoDia in decisiones
+                     .Where(x => !x.Unidad.EsSabatina)
+                     .GroupBy(x => new
+                     {
+                         x.Unidad.DocenteId,
+                         x.Unidad.GrupoId,
+                         x.Opcion.Dia
+                     }))
+        {
+            var bloques = docenteGrupoDia
+                .Select(x => (int)x.Opcion.Bloque)
+                .Distinct()
+                .OrderBy(x => x)
+                .ToArray();
+            foreach (var bloque in bloques)
+            {
+                var actuales = docenteGrupoDia
+                    .Where(x => x.Opcion.Bloque == bloque)
+                    .ToArray();
+                var siguientes = docenteGrupoDia
+                    .Where(x => x.Opcion.Bloque == bloque + 1)
+                    .ToArray();
+
+                foreach (var actual in actuales)
+                {
+                    foreach (var siguiente in siguientes.Where(x =>
+                                 x.Unidad.CargaAcademicaId
+                                 != actual.Unidad.CargaAcademicaId))
+                    {
+                        var continuidad = modelo.NewBoolVar(
+                            $"continuidad_docente_grupo_"
+                            + $"{docenteGrupoDia.Key.DocenteId:N}_"
+                            + $"{docenteGrupoDia.Key.GrupoId:N}_"
+                            + $"{docenteGrupoDia.Key.Dia}_{bloque}_"
+                            + $"{actual.Unidad.CargaAcademicaId:N}_"
+                            + $"{siguiente.Unidad.CargaAcademicaId:N}");
+                        modelo.Add(continuidad <= actual.Variable);
+                        modelo.Add(continuidad <= siguiente.Variable);
+                        modelo.Add(continuidad >=
+                            actual.Variable + siguiente.Variable - 1);
+                        continuidades.Add(continuidad);
+                    }
+                }
+            }
+        }
+
+        return continuidades;
     }
 
     private static BoolVar CrearDisyuncion(
